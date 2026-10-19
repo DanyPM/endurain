@@ -407,6 +407,28 @@ def parse_frame_device_settings(frame):
     return get_value_from_frame(frame, "time_offset")
 
 
+def parse_frame_activity(frame):
+    """Extract the device UTC offset from a FIT activity frame.
+
+    The activity message carries ``timestamp`` (UTC) and ``local_timestamp``
+    (the same instant as local wall-clock time), both in seconds since the
+    FIT epoch. Their difference is the device's UTC offset, available even
+    when the file has no GPS fix. Raw values keep the subtraction a plain
+    integer operation, independent of the tzinfo fitdecode attaches.
+
+    Args:
+        frame: The decoded FIT data message.
+
+    Returns:
+        The UTC offset in seconds, or None when either timestamp is absent.
+    """
+    utc_raw = get_raw_value_from_frame(frame, "timestamp")
+    local_raw = get_raw_value_from_frame(frame, "local_timestamp")
+    if utc_raw is None or local_raw is None:
+        return None
+    return local_raw - utc_raw
+
+
 def parse_frame_length(frame):
     """Extract the pool-length fields from a FIT length frame.
 
