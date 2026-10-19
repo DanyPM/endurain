@@ -5,6 +5,7 @@ package once the Strava adapter needed it too — it is a module-level surface n
 """
 
 import itertools
+import math
 from datetime import datetime, timedelta
 
 import pytest
@@ -19,6 +20,7 @@ from modules.activities.computation import (
     calculate_robust_max,
     compute_elevation_gain_and_loss,
     smooth_elevation_stream,
+    sum_elevation_deltas,
 )
 
 
@@ -150,6 +152,20 @@ class TestComputeElevationGainAndLoss:
         gain, loss = compute_elevation_gain_and_loss([{"ele": 100}], median_window=10, avg_window=10, threshold=0.1)
         assert gain == 0.0
         assert loss == 0.0
+
+
+class TestSumElevationDeltas:
+    def test_flat_series_returns_zero_zero(self):
+        assert sum_elevation_deltas([{"ele": 100.0}, {"ele": 100.0}, {"ele": 100.0}]) == (0.0, 0.0)
+
+    def test_empty_returns_zero_zero(self):
+        assert sum_elevation_deltas([]) == (0.0, 0.0)
+
+    def test_composition_equals_compute_elevation_gain_and_loss(self):
+        # Synthetic noisy climb: linear trend + sinusoid + alternating jitter.
+        elevations = [{"ele": 100 + i * 0.5 + math.sin(i / 5) * 3 + (0.5 if i % 2 else -0.5)} for i in range(200)]
+        expected = compute_elevation_gain_and_loss(elevations)
+        assert sum_elevation_deltas(smooth_elevation_stream(elevations)) == expected
 
 
 class TestCalculatePace:

@@ -14,6 +14,7 @@ composition and contributor surfaces.
 
 import statistics
 from datetime import UTC, datetime
+from itertools import pairwise
 from statistics import mean
 
 from geopy.distance import geodesic
@@ -184,6 +185,35 @@ def smooth_elevation_stream(
     return [{**waypoint, "ele": ele} for waypoint, ele in zip(elevations, smoothed, strict=True)]
 
 
+def sum_elevation_deltas(
+    elevations: list[dict],
+    threshold: float = ELEVATION_THRESHOLD,
+) -> tuple[float, float]:
+    """Sum per-step elevation deltas above ``threshold``.
+
+    Expects an already-smoothed series and applies no smoothing itself. Laps
+    slice the stream smoothed once by :func:`smooth_elevation_stream`:
+    re-smoothing each slice clips gain at every lap boundary through filter
+    edge effects, so per-lap sums would no longer partition the activity total.
+
+    Args:
+        elevations: List of dicts with an ``ele`` key (meters).
+        threshold: Minimum |delta| (m) counted toward gain/loss.
+
+    Returns:
+        Tuple of (gain_m, loss_m); (0.0, 0.0) for empty input.
+    """
+    total_gain = 0.0
+    total_loss = 0.0
+    for previous, current in pairwise(elevations):
+        diff = current["ele"] - previous["ele"]
+        if diff > threshold:
+            total_gain += diff
+        elif diff < -threshold:
+            total_loss -= diff
+    return total_gain, total_loss
+
+
 def compute_elevation_gain_and_loss(
     elevations: list[dict],
     median_window: int = ELEVATION_MEDIAN_WINDOW,
@@ -210,16 +240,7 @@ def compute_elevation_gain_and_loss(
         return 0, 0
 
     filtered = _smooth_elevations(values, median_window, avg_window)
-
-    total_gain = 0.0
-    total_loss = 0.0
-    for i in range(1, len(filtered)):
-        diff = filtered[i] - filtered[i - 1]
-        if diff > threshold:
-            total_gain += diff
-        elif diff < -threshold:
-            total_loss -= diff
-    return total_gain, total_loss
+    return sum_elevation_deltas([{"ele": ele} for ele in filtered], threshold)
 
 
 def calculate_pace(

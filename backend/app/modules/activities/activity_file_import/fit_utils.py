@@ -22,6 +22,52 @@ import modules.activities.computation as activities_computation
 logger = core_logger.get_logger(__name__)
 
 
+def _fill_missing_lap_elevation(laps: list[dict], ele_waypoints: list[dict]) -> None:
+    """Fill lap ascent/descent missing from the FIT lap frames.
+
+    Some exporters (e.g. Health Sync) omit total_ascent/total_descent from lap
+    frames. Compute them from the once-smoothed altitude record stream, like
+    the GPX/TCX importers. Device-reported values (including a genuine 0) are
+    never overridden.
+
+    Args:
+        laps: Lap dicts from parse_frame_lap; updated in place.
+        ele_waypoints: Altitude record stream dicts with time/ele keys.
+    """
+    if not ele_waypoints:
+        return
+
+    laps_to_fill = [
+        lap
+        for lap in laps
+        if (lap.get("total_ascent") is None or lap.get("total_descent") is None)
+        and lap.get("start_time") is not None
+        and lap.get("total_elapsed_time") is not None
+    ]
+    if not laps_to_fill:
+        return
+
+    smoothed = activities_computation.smooth_elevation_stream(ele_waypoints)
+    if not smoothed:
+        return
+
+    for lap in laps_to_fill:
+        start = lap["start_time"]
+        end = start + timedelta(seconds=lap["total_elapsed_time"])
+        lap_ele = activity_file_import_parser_utils.filter_waypoints_by_time_range(
+            smoothed,
+            core_timezone.format_utc(start),
+            core_timezone.format_utc(end),
+        )
+        if not lap_ele:
+            continue
+        ele_gain, ele_loss = activities_computation.sum_elevation_deltas(lap_ele)
+        if lap.get("total_ascent") is None:
+            lap["total_ascent"] = round(ele_gain)
+        if lap.get("total_descent") is None:
+            lap["total_descent"] = round(ele_loss)
+
+
 def create_activity_objects(
     sessions_records: list[dict],
     user_id: int,
@@ -181,9 +227,10 @@ def create_activity_objects(
                 computed_gain, computed_loss = activities_computation.compute_elevation_gain_and_loss(
                     elevations=session_record["ele_waypoints"],
                 )
-                if ele_gain is None and computed_gain:
+                # A computed 0 m on a flat ride is a real value, not missing data.
+                if ele_gain is None and computed_gain is not None:
                     ele_gain = round(computed_gain)
-                if ele_loss is None and computed_loss:
+                if ele_loss is None and computed_loss is not None:
                     ele_loss = round(computed_loss)
 
             activity = activity_contracts.ActivityCore(
@@ -223,6 +270,11 @@ def create_activity_objects(
                 ),
                 tracker_model=(str(model) if (model := session_record["file_id"].get("product")) is not None else None),
                 total_cycles=session_record["session"]["total_cycles"],
+            )
+
+            _fill_missing_lap_elevation(
+                session_record["laps"],
+                session_record["ele_waypoints"],
             )
 
             waypoints = {
