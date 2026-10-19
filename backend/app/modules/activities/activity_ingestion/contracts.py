@@ -11,7 +11,7 @@ dependency runs one way, from provider to activities, and adding a second export
 format means adding a subclass rather than another branch in here.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -230,15 +230,16 @@ class BulkImportFormat:
         drop_directory: The directory a user places this export's files in for the
             server-side import, for a given user id.
         build_source: Builds the source applied to every file of one batch from
-            ``(user_id, import_initiated_time, read_member)``. May raise a domain
-            error when the archive is not a valid export of this format.
+            ``(user_id, import_initiated_time, read_member, member_names)``, where
+            ``member_names`` lists every member path in the archive. May raise a
+            domain error when the archive is not a valid export of this format.
     """
 
     name: str
     is_activity_member: Callable[[str], bool]
     is_export_member: Callable[[str], bool]
     drop_directory: Callable[[int], str]
-    build_source: Callable[[int, str, ArchiveMemberReader], BulkImportSource]
+    build_source: Callable[[int, str, ArchiveMemberReader, Sequence[str]], BulkImportSource]
 
 
 @dataclass(frozen=True)
