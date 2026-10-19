@@ -21,6 +21,8 @@ from modules.activities.computation import (
     compute_elevation_gain_and_loss,
     smooth_elevation_stream,
     sum_elevation_deltas,
+    double_running_cadence,
+    running_cadence_is_per_leg,
 )
 
 
@@ -353,3 +355,20 @@ class TestElevationSmoothing:
     def test_stream_smoothing_returns_input_on_invalid_data(self):
         stream = [{"time": "t", "ele": None}]
         assert smooth_elevation_stream(stream) == stream
+
+
+class TestRunningCadenceNormalization:
+    def test_running_cadence_is_per_leg_threshold(self):
+        assert running_cadence_is_per_leg(85) is True
+        assert running_cadence_is_per_leg(119) is True
+        assert running_cadence_is_per_leg(120) is False
+        assert running_cadence_is_per_leg(159) is False
+        assert running_cadence_is_per_leg(None) is False
+
+    def test_double_running_cadence_folds_fractional(self):
+        # (85 + 0.328125) * 2 = 170.66 -> 171.
+        assert double_running_cadence(85, 0.328125) == 171
+        assert double_running_cadence(93, 0.0) == 186
+        assert double_running_cadence(90) == 180
+        assert double_running_cadence(85, None) == 170
+        assert double_running_cadence(None) is None

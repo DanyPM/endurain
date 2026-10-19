@@ -76,6 +76,8 @@ def parse_frame_session(frame):
         get_value_from_frame(frame, "max_heart_rate"),
         get_value_from_frame(frame, "avg_cadence"),
         get_value_from_frame(frame, "max_cadence"),
+        get_value_from_frame(frame, "avg_fractional_cadence"),
+        get_value_from_frame(frame, "max_fractional_cadence"),
         get_value_from_frame(frame, "avg_power"),
         get_value_from_frame(frame, "max_power"),
         get_value_from_frame(frame, "total_ascent"),

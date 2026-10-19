@@ -19,6 +19,14 @@ from statistics import mean
 
 from geopy.distance import geodesic
 
+#: A running cadence below this reads as a single-leg rate (rpm) and is doubled
+#: to steps per minute (spm); at or above it the source already reports spm (some
+#: treadmill/footpod sources store full spm). Human running rpm tops out around
+#: 110 and running spm starts around 130, so the split is unambiguous. The
+#: ``28_normalize_running_cadence_to_spm`` migration heals stored rows with the
+#: same threshold.
+RUNNING_CADENCE_RPM_MAX = 120
+
 
 def _elapsed_seconds(start: datetime, end: datetime) -> float:
     """Return real elapsed seconds between two timestamps.
@@ -362,3 +370,37 @@ def calculate_np(data: list[dict]) -> float:
     normalized_power = avg_fourth_power ** (1 / 4)
 
     return normalized_power
+
+
+def running_cadence_is_per_leg(cadence: float | None) -> bool:
+    """Return whether a running cadence reads as a single-leg rate (rpm).
+
+    Decided once per activity from a representative (average) cadence, so the
+    same choice applies uniformly to avg/max, the stream and the laps. A
+    per-point decision would mis-handle walk breaks inside an spm stream.
+
+    Args:
+        cadence: Representative cadence of the activity, or ``None``.
+
+    Returns:
+        ``True`` when the cadence is below :data:`RUNNING_CADENCE_RPM_MAX`.
+    """
+    return cadence is not None and float(cadence) < RUNNING_CADENCE_RPM_MAX
+
+
+def double_running_cadence(cadence: float | None, fractional: float | None = 0.0) -> int | None:
+    """Convert a single-leg running cadence (rpm) to steps per minute (spm).
+
+    Callers gate this on :func:`running_cadence_is_per_leg` so already-spm
+    sources are left untouched.
+
+    Args:
+        cadence: Single-leg cadence, or ``None``.
+        fractional: FIT ``fractional_cadence`` to fold in before doubling.
+
+    Returns:
+        ``round((cadence + fractional) * 2)``, or ``None`` when ``cadence`` is ``None``.
+    """
+    if cadence is None:
+        return None
+    return round((float(cadence) + float(fractional or 0.0)) * 2)
