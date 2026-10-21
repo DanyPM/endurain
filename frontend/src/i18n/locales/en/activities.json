@@ -68,6 +68,7 @@
     "time": "Time",
     "distance": "Distance",
     "movingTime": "Moving time",
+    "elapsedTime": "Elapsed time",
     "avgPace": "Avg pace",
     "avgSpeed": "Avg speed",
     "maxSpeed": "Max speed",

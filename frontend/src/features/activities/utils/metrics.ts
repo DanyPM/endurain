@@ -50,6 +50,44 @@ function has(value: number | null | undefined): value is number {
 }
 
 /**
+ * The activity's headline duration: moving (timer) time, matching the source app
+ * and the activity list, or elapsed time when the timer time is missing or 0
+ * (some imports and manual entries record no timer time).
+ *
+ * @param activity - The activity domain model.
+ * @returns The duration in seconds, or `null` when neither time is positive.
+ */
+export function activityDuration(activity: Activity): number | null {
+  for (const seconds of [activity.totalTimerTime, activity.totalElapsedTime]) {
+    if (has(seconds) && seconds > 0) {
+      return seconds
+    }
+  }
+  return null
+}
+
+/**
+ * The activity's elapsed (wall-clock) time when it differs from
+ * {@link activityDuration}, e.g. a ride with long stops.
+ *
+ * @param activity - The activity domain model.
+ * @returns The elapsed time in seconds, or `null` when absent or equal to the duration.
+ */
+export function distinctElapsedTime(activity: Activity): number | null {
+  const elapsed = activity.totalElapsedTime
+  const duration = activityDuration(activity)
+  if (
+    !has(elapsed) ||
+    elapsed <= 0 ||
+    duration === null ||
+    Math.round(elapsed) === Math.round(duration)
+  ) {
+    return null
+  }
+  return elapsed
+}
+
+/**
  * Builds the curated summary metric tiles for an activity, mirroring v1: at most
  * six type-specific stats for distance-based activities, and just calories/time/
  * avg-HR for non-distance sessions (gym/strength/racquet). Privacy-hidden stats
@@ -68,12 +106,9 @@ export function buildActivityMetrics(
   const type = activity.activityType
   const tiles: MetricTile[] = []
 
-  // Summary "Time" uses moving (timer) time to match the source app (e.g.
-  // Garmin) and the activity list; falls back to elapsed time when the device
-  // did not record a separate timer time.
   const pushTime = (): void => {
-    const duration = activity.totalTimerTime ?? activity.totalElapsedTime
-    if (has(duration)) {
+    const duration = activityDuration(activity)
+    if (duration !== null) {
       tiles.push({
         key: 'time',
         labelKey: 'activities.metrics.time',
