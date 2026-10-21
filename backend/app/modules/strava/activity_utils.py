@@ -293,19 +293,7 @@ def parse_activity(
         with SessionLocal() as db:
             gear_id = user_default_gear_utils.get_user_default_gear_by_activity_type(user_id, activity_type, db)
 
-    # Normalize running cadence to steps per minute (spm). Strava reports
-    # running cadence as a single-leg rate (rpm); the decision is made once per
-    # activity from the avg and already-spm sources are left untouched.
-    # Mutating the waypoints in place keeps the stored stream and the per-lap
-    # cadence (derived from the same stream_data) consistent with avg/max.
-    if activity_constants.is_running_cadence_type(activity_type) and activities_computation.running_cadence_is_per_leg(
-        avg_cadence
-    ):
-        avg_cadence = activities_computation.double_running_cadence(avg_cadence)
-        max_cadence = activities_computation.double_running_cadence(max_cadence)
-        for wp in cad_waypoints:
-            if wp.get("cad") is not None:
-                wp["cad"] = round(wp["cad"] * 2)
+    avg_cadence, max_cadence = _running_cadence_to_spm(activity_type, avg_cadence, max_cadence, cad_waypoints)
 
     if activity_type != 3 and activity_type != 7 and is_lat_lon_set:
         timezone = core_timezone.from_lat_lon(
@@ -374,6 +362,36 @@ def parse_activity(
         "stream_data": stream_data,
         "laps": laps,
     }
+
+
+def _running_cadence_to_spm(
+    activity_type: int,
+    avg_cadence: float | None,
+    max_cadence: float | None,
+    cad_waypoints: list[dict],
+) -> tuple[float | int | None, float | int | None]:
+    """Convert Strava running cadence from a single-leg rate (rpm) to steps per minute.
+
+    Strava reports running cadence as rpm, so running types are doubled whatever
+    the average holds. The waypoints are rewritten in place because the stream
+    data and the per-lap cadence are built from the same list.
+
+    Args:
+        activity_type: Endurain activity type id.
+        avg_cadence: Activity average cadence, or ``None``.
+        max_cadence: Activity maximum cadence, or ``None``.
+        cad_waypoints: Cadence stream waypoints.
+
+    Returns:
+        The average and maximum cadence, doubled for running types.
+    """
+    if not activity_constants.is_running_cadence_type(activity_type):
+        return avg_cadence, max_cadence
+    cad_waypoints[:] = activities_computation.double_cadence_waypoints(cad_waypoints)
+    return (
+        activities_computation.double_running_cadence(avg_cadence),
+        activities_computation.double_running_cadence(max_cadence),
+    )
 
 
 def save_activity_streams_laps(

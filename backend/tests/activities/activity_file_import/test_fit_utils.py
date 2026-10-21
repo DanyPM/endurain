@@ -245,26 +245,52 @@ class TestUtilsFit:
         # (84 + 0.5) * 2 = 169 ; (88 + 0) * 2 = 176.
         assert payload["laps"][0]["avg_cadence"] == 169
         assert payload["laps"][0]["max_cadence"] == 176
+        # The fraction is folded into avg/max_cadence above.
+        assert payload["laps"][0]["avg_fractional_cadence"] is None
+        assert payload["laps"][0]["max_fractional_cadence"] is None
 
-    def test_create_activity_objects_leaves_already_spm_running_cadence(self):
-        """A running-type source that already stores spm (e.g. treadmill) is
-        left untouched: the rpm/spm threshold protects it from doubling."""
+    def test_create_activity_objects_doubles_running_cadence_whatever_its_value(self):
+        """FIT running cadence is per-leg by format, so every running type is doubled."""
         record = _session_record(None)
         record["session"]["activity_type"] = "treadmill"
-        record["session"]["avg_cadence"] = 159
-        record["session"]["max_cadence"] = 167
+        record["session"]["avg_cadence"] = 130
+        record["session"]["max_cadence"] = 140
         record["cad_waypoints"] = [
-            {"time": "2026-06-20T08:20:03", "cad": 158},
-            {"time": "2026-06-20T08:20:10", "cad": 167},
+            {"time": "2026-06-20T08:20:03", "cad": 128},
+            {"time": "2026-06-20T08:20:10", "cad": None},
         ]
 
-        activities_list = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)
+        payload = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)[0]
 
-        payload = activities_list[0]
         assert payload["activity"].activity_type == 40
-        assert payload["activity"].average_cad == 159
-        assert payload["activity"].max_cad == 167
-        assert [wp["cad"] for wp in payload["cad_waypoints"]] == [158, 167]
+        assert payload["activity"].average_cad == 260
+        assert payload["activity"].max_cad == 280
+        assert [wp["cad"] for wp in payload["cad_waypoints"]] == [256, None]
+
+    def test_create_activity_objects_doubles_running_max_without_avg(self):
+        """A session with only max_cadence still has it doubled."""
+        record = _session_record(None)
+        record["session"]["activity_type"] = "running"
+        record["session"]["max_cadence"] = 93
+
+        activity = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)[0]["activity"]
+
+        assert activity.average_cad is None
+        assert activity.max_cad == 186
+
+    def test_create_activity_objects_rounds_stream_fallback_cadence(self):
+        """Avg/max taken from the stream are rounded to integers for every sport."""
+        record = _session_record(None)
+        record["session"]["activity_type"] = "cycling"
+        record["cad_waypoints"] = [
+            {"time": "2026-06-20T08:20:03", "cad": 80},
+            {"time": "2026-06-20T08:20:10", "cad": 85},
+        ]
+
+        activity = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)[0]["activity"]
+
+        assert activity.average_cad == 82
+        assert activity.max_cad == 85
 
     def test_create_activity_objects_keeps_cycling_cadence_as_rpm(self):
         """Non-running cadence is stored verbatim (rpm), never doubled."""

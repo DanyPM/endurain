@@ -19,14 +19,6 @@ from statistics import mean
 
 from geopy.distance import geodesic
 
-#: A running cadence below this reads as a single-leg rate (rpm) and is doubled
-#: to steps per minute (spm); at or above it the source already reports spm (some
-#: treadmill/footpod sources store full spm). Human running rpm tops out around
-#: 110 and running spm starts around 130, so the split is unambiguous. The
-#: ``28_normalize_running_cadence_to_spm`` migration heals stored rows with the
-#: same threshold.
-RUNNING_CADENCE_RPM_MAX = 120
-
 
 def _elapsed_seconds(start: datetime, end: datetime) -> float:
     """Return real elapsed seconds between two timestamps.
@@ -372,27 +364,11 @@ def calculate_np(data: list[dict]) -> float:
     return normalized_power
 
 
-def running_cadence_is_per_leg(cadence: float | None) -> bool:
-    """Return whether a running cadence reads as a single-leg rate (rpm).
-
-    Decided once per activity from a representative (average) cadence, so the
-    same choice applies uniformly to avg/max, the stream and the laps. A
-    per-point decision would mis-handle walk breaks inside an spm stream.
-
-    Args:
-        cadence: Representative cadence of the activity, or ``None``.
-
-    Returns:
-        ``True`` when the cadence is below :data:`RUNNING_CADENCE_RPM_MAX`.
-    """
-    return cadence is not None and float(cadence) < RUNNING_CADENCE_RPM_MAX
-
-
 def double_running_cadence(cadence: float | None, fractional: float | None = 0.0) -> int | None:
     """Convert a single-leg running cadence (rpm) to steps per minute (spm).
 
-    Callers gate this on :func:`running_cadence_is_per_leg` so already-spm
-    sources are left untouched.
+    Importers call this for running activity types when the source format
+    reports a per-leg rate (FIT, Strava, TCX, GPX).
 
     Args:
         cadence: Single-leg cadence, or ``None``.
@@ -404,3 +380,19 @@ def double_running_cadence(cadence: float | None, fractional: float | None = 0.0
     if cadence is None:
         return None
     return round((float(cadence) + float(fractional or 0.0)) * 2)
+
+
+def double_cadence_waypoints(waypoints: list[dict]) -> list[dict]:
+    """Return cadence waypoints with every ``cad`` converted from rpm to spm.
+
+    Waypoints whose ``cad`` is ``None`` are kept unchanged.
+
+    Args:
+        waypoints: Cadence waypoints (dicts with a ``cad`` key).
+
+    Returns:
+        New waypoint dicts with ``cad`` doubled and rounded.
+    """
+    return [
+        {**wp, "cad": double_running_cadence(wp.get("cad"))} if wp.get("cad") is not None else wp for wp in waypoints
+    ]

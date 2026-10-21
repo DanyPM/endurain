@@ -315,8 +315,9 @@ class TestUtilsTcx:
 
         assert result["activity"].distance == 5000
 
-    def test_parse_tcx_file_doubles_run_cadence_only_running_file(self, tmp_path):
-        """A running TCX with cadence only in TPX RunCadence derives and doubles it to spm."""
+    @staticmethod
+    def _parse_run_cadence_file(tmp_path, cadences):
+        """Parse a running TCX whose trackpoints carry cadence only in TPX RunCadence."""
         trackpoints = "".join(
             f"""
             <Trackpoint>
@@ -325,7 +326,7 @@ class TestUtilsTcx:
               <DistanceMeters>{second * 3}</DistanceMeters>
               <Extensions><TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2"><RunCadence>{cadence}</RunCadence></TPX></Extensions>
             </Trackpoint>"""
-            for second, cadence in ((0, 84), (10, 86), (20, 88), (30, 90))
+            for second, cadence in zip((0, 10, 20, 30), cadences, strict=True)
         )
         tcx_path = tmp_path / "run_cadence.tcx"
         tcx_path.write_text(
@@ -351,7 +352,11 @@ class TestUtilsTcx:
             "modules.activities.activity_file_import.tcx_utils.activity_file_import_parser_utils.resolve_timezone_from_lat_lon",
             return_value="UTC",
         ):
-            result = tcx_utils.parse_tcx_file(file=str(tcx_path), user_id=1, default_timezone=_SERVER_TZ)
+            return tcx_utils.parse_tcx_file(file=str(tcx_path), user_id=1, default_timezone=_SERVER_TZ)
+
+    def test_parse_tcx_file_doubles_run_cadence_only_running_file(self, tmp_path):
+        """A running TCX with cadence only in TPX RunCadence derives and doubles it to spm."""
+        result = self._parse_run_cadence_file(tmp_path, (84, 86, 88, 90))
 
         activity = result["activity"]
         # mean([84, 86, 88, 90]) = 87 rpm, max 90 rpm.
@@ -360,6 +365,13 @@ class TestUtilsTcx:
         assert [wp["cad"] for wp in result["cad_waypoints"]] == [168, 172, 176, 180]
         assert result["laps"][0]["avg_cadence"] == 174
         assert result["laps"][0]["max_cadence"] == 180
+
+    def test_parse_tcx_file_doubles_run_cadence_whatever_its_value(self, tmp_path):
+        """RunCadence is per-leg by format, so a high value is doubled too."""
+        result = self._parse_run_cadence_file(tmp_path, (120, 122, 124, 126))
+
+        assert result["activity"].average_cad == 246
+        assert result["activity"].max_cad == 252
 
 
 def _make_lap(start, end, trackpoints, **overrides):

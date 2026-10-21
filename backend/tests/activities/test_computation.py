@@ -19,10 +19,10 @@ from modules.activities.computation import (
     calculate_pace,
     calculate_robust_max,
     compute_elevation_gain_and_loss,
+    double_cadence_waypoints,
+    double_running_cadence,
     smooth_elevation_stream,
     sum_elevation_deltas,
-    double_running_cadence,
-    running_cadence_is_per_leg,
 )
 
 
@@ -358,13 +358,6 @@ class TestElevationSmoothing:
 
 
 class TestRunningCadenceNormalization:
-    def test_running_cadence_is_per_leg_threshold(self):
-        assert running_cadence_is_per_leg(85) is True
-        assert running_cadence_is_per_leg(119) is True
-        assert running_cadence_is_per_leg(120) is False
-        assert running_cadence_is_per_leg(159) is False
-        assert running_cadence_is_per_leg(None) is False
-
     def test_double_running_cadence_folds_fractional(self):
         # (85 + 0.328125) * 2 = 170.66 -> 171.
         assert double_running_cadence(85, 0.328125) == 171
@@ -372,3 +365,12 @@ class TestRunningCadenceNormalization:
         assert double_running_cadence(90) == 180
         assert double_running_cadence(85, None) == 170
         assert double_running_cadence(None) is None
+
+    def test_double_cadence_waypoints_keeps_none_samples(self):
+        waypoints = [{"time": "t0", "cad": 85}, {"time": "t1", "cad": None}, {"time": "t2", "cad": 87.4}]
+
+        assert double_cadence_waypoints(waypoints) == [
+            {"time": "t0", "cad": 170},
+            {"time": "t1", "cad": None},
+            {"time": "t2", "cad": 175},
+        ]
