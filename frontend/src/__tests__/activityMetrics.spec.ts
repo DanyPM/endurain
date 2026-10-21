@@ -85,3 +85,26 @@ describe('buildActivityMetrics time tile', () => {
     expect(timeTile(null, null)).toBeUndefined()
   })
 })
+
+describe('buildActivityMetrics elapsed tile', () => {
+  const keysFor = (activityType: number, totalElapsedTime: number) =>
+    buildActivityMetrics(
+      makeActivity({ activityType, totalTimerTime: 600, totalElapsedTime }),
+      'metric',
+      visible,
+    )
+
+  it('adds elapsed time after the time tile for non-distance sessions when it differs', () => {
+    const tiles = keysFor(19, 1200)
+    expect(tiles.map((tile) => tile.key)).toEqual(['calories', 'time', 'elapsedTime', 'avgHr'])
+    expect(tiles.find((tile) => tile.key === 'elapsedTime')?.value).toBe('20:00')
+  })
+
+  it('omits elapsed time for non-distance sessions when it matches the timer time', () => {
+    expect(keysFor(19, 600).map((tile) => tile.key)).not.toContain('elapsedTime')
+  })
+
+  it('keeps elapsed time off the summary for distance activities', () => {
+    expect(keysFor(1, 1200).map((tile) => tile.key)).not.toContain('elapsedTime')
+  })
+})

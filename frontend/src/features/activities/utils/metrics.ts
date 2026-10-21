@@ -96,7 +96,7 @@ export function distinctElapsedTime(activity: Activity): number | null {
  * @param activity - The activity domain model.
  * @param units - The user's unit system.
  * @param visibility - Which privacy-gated metrics the viewer may see.
- * @returns The ordered tiles to render (≤ 6 for distance activities, 3 otherwise).
+ * @returns The ordered tiles to render (≤ 6 for distance activities, up to 4 otherwise).
  */
 export function buildActivityMetrics(
   activity: Activity,
@@ -113,6 +113,20 @@ export function buildActivityMetrics(
         key: 'time',
         labelKey: 'activities.metrics.time',
         value: formatHmsDuration(duration),
+        unit: '',
+        accent: 'ink',
+      })
+    }
+  }
+  // Distance sessions show a distinct elapsed time on their pace/speed charts;
+  // non-distance sessions have no such chart, so it gets a tile of its own.
+  const pushElapsed = (): void => {
+    const elapsed = distinctElapsedTime(activity)
+    if (elapsed !== null) {
+      tiles.push({
+        key: 'elapsedTime',
+        labelKey: 'activities.metrics.elapsedTime',
+        value: formatHmsDuration(elapsed),
         unit: '',
         accent: 'ink',
       })
@@ -218,6 +232,7 @@ export function buildActivityMetrics(
     pushJumps()
     pushCalories()
     pushTime()
+    pushElapsed()
     pushAvgHr()
     return tiles
   }
