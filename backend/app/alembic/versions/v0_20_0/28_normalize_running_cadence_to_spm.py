@@ -14,12 +14,13 @@ rpm and a walk logged as a run below 100 spm is doubled.
 
 The representative cadence is a non-zero ``activities.average_cad``, else the
 mean of the non-zero cadence stream samples (``stream_type = 3``), else the mean
-of the non-zero per-lap cadence with its fraction; a zero cadence counts as
-missing. The decision
-is taken once per activity, recorded in ``cadence_spm_migration_rows`` together
-with the original scalars, and applied to the stream, the laps and the scalars
-alike. A missing ``average_cad`` is the representative cadence; a missing
-``max_cad`` comes from the stream, else the laps.
+of the non-zero per-lap cadence with its fraction, else a non-zero ``max_cad``
+(a maximum below 100 implies an average below 100); a zero cadence counts as
+missing. The decision is taken once per activity, recorded in
+``cadence_spm_migration_rows`` together with the original scalars, and applied
+to the stream, the laps and the scalars alike. A missing ``average_cad`` takes
+the mean it was decided from, if any; a missing ``max_cad`` comes from the
+stream, else the laps.
 
 Only plausible activities are touched: cadence is a uint8 in FIT, so an activity
 with ``max_cad``, a lap value (with its fraction) or a numeric stream sample
@@ -129,7 +130,7 @@ def upgrade() -> None:
         )
         SELECT id, average_cad, max_cad, per_leg_avg, per_leg_max
         FROM decided
-        WHERE per_leg_avg < 100
+        WHERE COALESCE(per_leg_avg, NULLIF(max_cad, 0)) < 100
         """
     )
 
