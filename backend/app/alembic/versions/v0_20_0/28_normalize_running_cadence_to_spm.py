@@ -14,11 +14,12 @@ rpm and a walk logged as a run below 100 spm is doubled.
 
 The representative cadence is a non-zero ``activities.average_cad``, else the
 mean of the non-zero cadence stream samples (``stream_type = 3``), else the mean
-of the non-zero per-lap cadence; a zero cadence counts as missing. The decision
+of the non-zero per-lap cadence with its fraction; a zero cadence counts as
+missing. The decision
 is taken once per activity, recorded in ``cadence_spm_migration_rows`` together
 with the original scalars, and applied to the stream, the laps and the scalars
-alike. Activities without an average get ``average_cad``/``max_cad`` from the
-stream or laps they were decided from.
+alike. A missing ``average_cad`` is the representative cadence; a missing
+``max_cad`` comes from the stream, else the laps.
 
 Only plausible activities are touched: cadence is a uint8 in FIT, so an activity
 with ``max_cad``, a lap value (with its fraction) or a numeric stream sample
@@ -92,8 +93,14 @@ def upgrade() -> None:
         ),
         lap_cad AS (
             SELECT l.activity_id,
-                   avg(COALESCE(NULLIF(l.avg_cadence, 0), NULLIF(l.max_cadence, 0))) AS avg_cad,
-                   max(COALESCE(NULLIF(l.max_cadence, 0), NULLIF(l.avg_cadence, 0))) AS max_cad
+                   avg(COALESCE(
+                       NULLIF(l.avg_cadence, 0) + COALESCE(l.avg_fractional_cadence, 0),
+                       NULLIF(l.max_cadence, 0) + COALESCE(l.max_fractional_cadence, 0)
+                   )) AS avg_cad,
+                   max(COALESCE(
+                       NULLIF(l.max_cadence, 0) + COALESCE(l.max_fractional_cadence, 0),
+                       NULLIF(l.avg_cadence, 0) + COALESCE(l.avg_fractional_cadence, 0)
+                   )) AS max_cad
             FROM activity_laps l
             JOIN activities a ON a.id = l.activity_id AND a.activity_type IN (1, 2, 3, 34, 40)
             WHERE COALESCE(NULLIF(l.avg_cadence, 0), NULLIF(l.max_cadence, 0)) IS NOT NULL
@@ -112,12 +119,7 @@ def upgrade() -> None:
                    a.average_cad,
                    a.max_cad,
                    COALESCE(NULLIF(a.average_cad, 0), sc.avg_cad, lc.avg_cad) AS per_leg_avg,
-                   CASE
-                       WHEN NULLIF(a.average_cad, 0) IS NOT NULL OR NULLIF(a.max_cad, 0) IS NOT NULL THEN a.max_cad
-                       WHEN sc.avg_cad IS NOT NULL THEN sc.max_cad
-                       WHEN lc.avg_cad IS NOT NULL THEN lc.max_cad
-                       ELSE a.max_cad
-                   END AS per_leg_max
+                   COALESCE(NULLIF(a.max_cad, 0), sc.max_cad, lc.max_cad, a.max_cad) AS per_leg_max
             FROM activities a
             LEFT JOIN stream_cad sc ON sc.activity_id = a.id
             LEFT JOIN lap_cad lc ON lc.activity_id = a.id
