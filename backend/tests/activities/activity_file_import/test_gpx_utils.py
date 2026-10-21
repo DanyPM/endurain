@@ -367,6 +367,37 @@ class TestParseGpxFile:
         assert activity.total_elapsed_time == 10
         assert activity.total_timer_time == 10
 
+    def test_parse_gpx_file_out_of_order_timestamp_does_not_inflate_timer(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """
+        Test timestamps 0, 10, 5, 15 s give 15 s of timer time, not 20.
+        """
+        _patch_parser_side_effects(monkeypatch)
+        gpx_path = _write_gpx(
+            tmp_path,
+            """
+            <gpx version="1.1" creator="pytest">
+              <trk>
+                <name>Out of order</name>
+                <type>Run</type>
+                <trkseg>
+                  <trkpt lat="0.0" lon="0.0"><time>2025-01-01T00:00:00Z</time></trkpt>
+                  <trkpt lat="0.0" lon="0.001"><time>2025-01-01T00:00:10Z</time></trkpt>
+                  <trkpt lat="0.0" lon="0.002"><time>2025-01-01T00:00:05Z</time></trkpt>
+                  <trkpt lat="0.0" lon="0.003"><time>2025-01-01T00:00:15Z</time></trkpt>
+                </trkseg>
+              </trk>
+            </gpx>
+            """.strip(),
+        )
+
+        result = gpx_utils.parse_gpx_file(gpx_path, user_id=1, default_timezone=_SERVER_TZ)
+
+        assert result["activity"].total_timer_time == 15
+
     def test_parse_gpx_file_converts_offset_timestamps_to_utc(
         self,
         tmp_path,

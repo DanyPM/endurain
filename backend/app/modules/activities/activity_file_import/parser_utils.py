@@ -561,9 +561,10 @@ def compute_distance_from_waypoints(lat_lon_waypoints: list[dict]) -> float:
 def compute_moving_time_from_times(times: list[datetime]) -> float:
     """Compute moving time in seconds from ordered trackpoint timestamps.
 
-    Sums the delta between consecutive timestamps, skipping pause gaps
-    (deltas above ``PAUSE_DETECTION_THRESHOLD_SECONDS``) and non-positive
-    deltas from duplicate or out-of-order timestamps (issue #571).
+    Sums the delta from the latest timestamp seen so far to each next one,
+    skipping pause gaps (deltas above ``PAUSE_DETECTION_THRESHOLD_SECONDS``,
+    issue #571). Duplicate or out-of-order timestamps add nothing and do not
+    become the baseline.
 
     Args:
         times: Trackpoint timestamps in recording order, without ``None``
@@ -573,8 +574,12 @@ def compute_moving_time_from_times(times: list[datetime]) -> float:
         Moving time in seconds. ``0.0`` if fewer than two timestamps.
     """
     moving_time = 0.0
-    for i in range(1, len(times)):
-        delta = (times[i] - times[i - 1]).total_seconds()
-        if 0 < delta <= PAUSE_DETECTION_THRESHOLD_SECONDS:
+    baseline = times[0] if times else None
+    for time in times[1:]:
+        delta = (time - baseline).total_seconds()
+        if delta <= 0:
+            continue
+        if delta <= PAUSE_DETECTION_THRESHOLD_SECONDS:
             moving_time += delta
+        baseline = time
     return moving_time

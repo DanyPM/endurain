@@ -217,7 +217,8 @@ def _extract_waypoints(
                 prev_lon = None
             elif delta > 0:
                 moving_time += delta
-            # Non-positive deltas (duplicate timestamps) are ignored.
+            # Non-positive deltas (duplicate/out-of-order timestamps) add
+            # nothing and leave the previous point as the baseline below.
 
         timestamp = core_timezone.format_utc(time_val)
 
@@ -253,11 +254,12 @@ def _extract_waypoints(
             "pace",
         )
 
-        prev_lat, prev_lon, last_time = (
-            lat,
-            lon,
-            time_val,
-        )
+        if last_time is None or time_val > last_time:
+            prev_lat, prev_lon, last_time = (
+                lat,
+                lon,
+                time_val,
+            )
 
     _close_segment()
 

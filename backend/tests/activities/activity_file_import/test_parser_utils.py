@@ -125,9 +125,15 @@ class TestComputeMovingTimeFromTimes:
             t,
             t,  # zero delta
             t - timedelta(seconds=5),  # negative delta
-            t + timedelta(seconds=5),  # 10 s from previous point
+            t + timedelta(seconds=5),  # 5 s from the latest timestamp, t
         ]
-        assert afi_utils.compute_moving_time_from_times(times) == 10.0
+        assert afi_utils.compute_moving_time_from_times(times) == 5.0
+
+    def test_out_of_order_timestamp_does_not_become_baseline(self):
+        """Timestamps 0, 10, 5, 15 s give 15 s of moving time, not 20."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        times = [t + timedelta(seconds=s) for s in (0, 10, 5, 15)]
+        assert afi_utils.compute_moving_time_from_times(times) == 15.0
 
 
 class TestTimezoneFinderCache:

@@ -341,7 +341,8 @@ def _process_trackpoint(
             state.reset_segment()
         elif delta > 0:
             state.moving_time += delta
-        # Non-positive deltas (duplicate/out-of-order timestamps) are ignored.
+        # Non-positive deltas (duplicate/out-of-order timestamps) add nothing
+        # and leave the previous point as the baseline below.
 
     if elevation is not None:
         state.is_elevation_set = True
@@ -434,9 +435,10 @@ def _process_trackpoint(
         "pace",
     )
 
-    state.prev_latitude = latitude
-    state.prev_longitude = longitude
-    state.prev_waypoint_time = time
+    if state.prev_waypoint_time is None or time > state.prev_waypoint_time:
+        state.prev_latitude = latitude
+        state.prev_longitude = longitude
+        state.prev_waypoint_time = time
     state.last_waypoint_time = time
 
 
