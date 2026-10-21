@@ -69,7 +69,7 @@ def _iter_summary_entries(data: Any):
 def load_summarized_activities(
     member_names: Iterable[str],
     read_member: activity_ingestion_integration.ArchiveMemberReader,
-) -> dict[int, str]:
+) -> dict[int, str | None]:
     """Index the activity names of every summary file in an archive.
 
     Args:
@@ -78,10 +78,11 @@ def load_summarized_activities(
 
     Returns:
         Activity names keyed by start time as epoch seconds (derived from
-        ``startTimeGmt`` in milliseconds). When several entries share a start
-        second, the first one read wins. Empty when no summary file is usable.
+        ``startTimeGmt`` in milliseconds). A start second shared by entries with
+        different names maps to None, so neither activity takes a name from it.
+        Empty when no summary file is usable.
     """
-    index: dict[int, str] = {}
+    index: dict[int, str | None] = {}
     for member_name in sorted(name for name in member_names if is_summary_member(name)):
         content = read_member(member_name)
         if content is None:
@@ -103,22 +104,24 @@ def load_summarized_activities(
                 continue
             start_s = int(start_ms) // 1000
             if start_s in index:
-                logger.warning(
-                    "Bulk file import: two Garmin summary entries share a start second, keeping the first",
-                    extra=core_logger.context(console=True, file=member_name, start_time=start_s),
-                )
+                if index[start_s] != str(name):
+                    logger.warning(
+                        "Bulk file import: two Garmin summary entries share a start second, naming neither",
+                        extra=core_logger.context(console=True, file=member_name, start_time=start_s),
+                    )
+                    index[start_s] = None
                 continue
             index[start_s] = str(name)
 
     logger.info(
         "Bulk file import: loaded activity names from Garmin summary files",
-        extra=core_logger.context(console=True, names=len(index)),
+        extra=core_logger.context(console=True, names=sum(name is not None for name in index.values())),
     )
     return index
 
 
 def find_name_for_start_time(
-    index: dict[int, str],
+    index: dict[int, str | None],
     start_time: datetime,
     tolerance_s: int = DEFAULT_START_TIME_TOLERANCE_S,
 ) -> str | None:
@@ -131,17 +134,17 @@ def find_name_for_start_time(
 
     Returns:
         The name of the entry with the exact start second, else of the only
-        entry within ``tolerance_s``. None when nothing matches, or when several
-        entries are within range, since activities started close together (a
-        brick workout, a split recording) could otherwise take each other's names.
+        entry within ``tolerance_s``. None when nothing matches, when the
+        matching second is shared by several entries, or when several entries
+        are within range, since activities started close together (a brick
+        workout, a split recording) could otherwise take each other's names.
     """
     if not index:
         return None
     epoch = int(start_time.timestamp())
 
-    exact = index.get(epoch)
-    if exact is not None:
-        return exact
+    if epoch in index:
+        return index[epoch]
 
     candidates = [name for entry_epoch, name in index.items() if abs(entry_epoch - epoch) <= tolerance_s]
     return candidates[0] if len(candidates) == 1 else None

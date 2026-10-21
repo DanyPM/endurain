@@ -29,7 +29,7 @@ class GarminBulkImportSource(activity_ingestion_integration.BulkImportSource):
             epoch seconds, from the export's summary files.
     """
 
-    activity_names: dict[int, str] = field(default_factory=dict)
+    activity_names: dict[int, str | None] = field(default_factory=dict)
 
     import_source_label = "Garmin bulk import"
 

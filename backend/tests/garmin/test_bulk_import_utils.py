@@ -93,7 +93,7 @@ class TestLoadSummarizedActivities:
 
         assert index == {START_S + 1: "Valid"}
 
-    def test_keeps_the_first_entry_and_warns_when_two_share_a_start_second(self, monkeypatch):
+    def test_marks_a_start_second_shared_by_different_names_and_warns(self, monkeypatch):
         logger = Mock()
         monkeypatch.setattr(garmin_bulk_import_utils, "logger", logger)
         payload = [
@@ -103,8 +103,21 @@ class TestLoadSummarizedActivities:
 
         index = _load({"summarizedActivities.json": json.dumps(payload).encode()})
 
-        assert index == {START_S: "First"}
+        assert index == {START_S: None}
         logger.warning.assert_called_once()
+
+    def test_keeps_a_start_second_shared_by_the_same_name(self, monkeypatch):
+        logger = Mock()
+        monkeypatch.setattr(garmin_bulk_import_utils, "logger", logger)
+        payload = [
+            {"activityId": 1, "name": "Run", "startTimeGmt": START_MS},
+            {"activityId": 1, "name": "Run", "startTimeGmt": START_MS},
+        ]
+
+        index = _load({"summarizedActivities.json": json.dumps(payload).encode()})
+
+        assert index == {START_S: "Run"}
+        logger.warning.assert_not_called()
 
     def test_ignores_unrelated_members(self):
         assert _load({"activity.fit": b"binary-ish", "user_0_gear.json": b"[]"}) == {}
@@ -146,6 +159,15 @@ class TestFindNameForStartTime:
         start = datetime.fromtimestamp(START_S + 40, tz=UTC)
 
         assert garmin_bulk_import_utils.find_name_for_start_time(index, start) == "Run"
+
+    def test_shared_start_second_gives_no_name_even_with_a_unique_neighbour(self):
+        index = {START_S: None, START_S + 600: "Run"}
+
+        assert garmin_bulk_import_utils.find_name_for_start_time(index, datetime.fromtimestamp(START_S, tz=UTC)) is None
+        assert (
+            garmin_bulk_import_utils.find_name_for_start_time(index, datetime.fromtimestamp(START_S + 20, tz=UTC))
+            is None
+        )
 
     def test_empty_index(self):
         assert garmin_bulk_import_utils.find_name_for_start_time({}, datetime.now(tz=UTC)) is None
