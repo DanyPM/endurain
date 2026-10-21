@@ -96,7 +96,7 @@ export function distinctElapsedTime(activity: Activity): number | null {
  * @param activity - The activity domain model.
  * @param units - The user's unit system.
  * @param visibility - Which privacy-gated metrics the viewer may see.
- * @returns The ordered tiles to render (≤ 6 for distance activities, up to 4 otherwise).
+ * @returns The ordered tiles to render (≤ 6 for distance activities, up to 5 otherwise).
  */
 export function buildActivityMetrics(
   activity: Activity,
