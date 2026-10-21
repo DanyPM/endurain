@@ -207,17 +207,18 @@ def create_activity_objects(
             # fractional_cadence, so running types are stored as steps per
             # minute: spm = (cadence + fractional) * 2. Other sports keep their
             # native rpm. Falls back to the per-record stream (read here, before
-            # it is doubled below) when the session omitted avg/max cadence.
+            # it is doubled below) when the session avg/max cadence is missing
+            # or zero.
             avg_cadence = session_record["session"]["avg_cadence"]
             max_cadence = session_record["session"]["max_cadence"]
-            if (avg_cadence is None or max_cadence is None) and session_record["cad_waypoints"]:
+            if (not avg_cadence or not max_cadence) and session_record["cad_waypoints"]:
                 cad_avg, cad_max = activities_computation.calculate_avg_and_max(
                     session_record["cad_waypoints"],
                     "cad",
                 )
-                if avg_cadence is None and cad_avg:
+                if not avg_cadence and cad_avg:
                     avg_cadence = cad_avg
-                if max_cadence is None and cad_max:
+                if not max_cadence and cad_max:
                     max_cadence = cad_max
             double_cadence = activity_constants.is_running_cadence_type(activity_type)
             if double_cadence:

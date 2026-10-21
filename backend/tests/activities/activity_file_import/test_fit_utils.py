@@ -249,6 +249,23 @@ class TestUtilsFit:
         assert payload["laps"][0]["avg_fractional_cadence"] is None
         assert payload["laps"][0]["max_fractional_cadence"] is None
 
+    def test_create_activity_objects_running_zero_cadence_falls_back_to_waypoints(self):
+        """A zero session cadence counts as missing, so the stream is used before doubling."""
+        record = _session_record(None)
+        record["session"]["activity_type"] = "running"
+        record["session"]["avg_cadence"] = 0
+        record["session"]["max_cadence"] = 0
+        record["cad_waypoints"] = [
+            {"time": "2026-06-20T08:20:03", "cad": 84},
+            {"time": "2026-06-20T08:20:10", "cad": 90},
+        ]
+
+        payload = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)[0]
+
+        # mean([84, 90]) * 2 = 174 ; 90 * 2 = 180.
+        assert payload["activity"].average_cad == 174
+        assert payload["activity"].max_cad == 180
+
     def test_create_activity_objects_doubles_running_cadence_whatever_its_value(self):
         """FIT running cadence is per-leg by format, so every running type is doubled."""
         record = _session_record(None)

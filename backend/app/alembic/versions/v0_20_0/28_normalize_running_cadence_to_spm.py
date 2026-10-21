@@ -12,23 +12,25 @@ representative cadence is below 100 is taken as rpm and doubled, one at or above
 110 and real spm is almost never below 120, so a slow run above 100 rpm stays in
 rpm and a walk logged as a run below 100 spm is doubled.
 
-The representative cadence is ``activities.average_cad``, else the mean of the
-non-zero cadence stream samples (``stream_type = 3``), else the mean of the
-per-lap cadence. The decision is taken once per activity, recorded in
-``cadence_spm_migration_rows`` together with the original scalars, and applied
-to the stream, the laps and the scalars alike. Activities without an average get
-``average_cad``/``max_cad`` from the stream or laps they were decided from.
+The representative cadence is a non-zero ``activities.average_cad``, else the
+mean of the non-zero cadence stream samples (``stream_type = 3``), else the mean
+of the non-zero per-lap cadence; a zero cadence counts as missing. The decision
+is taken once per activity, recorded in ``cadence_spm_migration_rows`` together
+with the original scalars, and applied to the stream, the laps and the scalars
+alike. Activities without an average get ``average_cad``/``max_cad`` from the
+stream or laps they were decided from.
 
-Only plausible values are touched: cadence is a uint8 in FIT, so activities with
-``max_cad`` above 255, lap values above 255 and stream samples above 255 or
-non-numeric are left as stored rather than overflowing ``int4``. A lap whose
-fraction is folded into ``avg_cadence``/``max_cadence`` has its
-``*_fractional_cadence`` cleared.
+Only plausible activities are touched: cadence is a uint8 in FIT, so an activity
+with ``max_cad``, a lap value (with its fraction) or a numeric stream sample
+above 255 is left entirely as stored rather than overflowing ``int4``. A
+recorded activity has every lap value and numeric stream sample doubled;
+non-numeric stream samples are kept as they are. A lap whose fraction is folded
+into ``avg_cadence``/``max_cadence`` has its ``*_fractional_cadence`` cleared.
 
 ``downgrade()`` restores the recorded activities' original scalars and halves
-their lap values and stream samples with integer division: a folded fraction of
-0.75 or more comes back one higher, cleared fractions stay empty, and a lap value
-or stream sample that upgrade left above 255 but at most 510 is halved too.
+their lap values and numeric stream samples with integer division: a folded
+fraction of 0.75 or more comes back one higher, cleared fractions stay empty,
+and a fractional stream sample comes back as an integer.
 
 Revision ID: c91ac2dad0f0
 Revises: d54bdd779392
@@ -49,7 +51,7 @@ depends_on: str | Sequence[str] | None = None
 # The running activity types (1, 2, 3, 34, 40), the rpm/spm cutoff (100) and the
 # plausible cadence ceiling (255) are inlined as a snapshot; a migration must not
 # follow later edits to app code. A stream ``cad`` is cast to numeric only when
-# it matches ``^[0-9]{1,3}([.][0-9]+)?$``, so a non-numeric sample cannot abort it.
+# it matches ``^[0-9]+([.][0-9]+)?$``, so a non-numeric sample cannot abort it.
 
 
 def upgrade() -> None:
@@ -69,47 +71,59 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO cadence_spm_migration_rows (activity_id, average_cad, max_cad, per_leg_avg, per_leg_max)
-        WITH stream_cad AS (
-            SELECT s.activity_id, avg(v.cad) AS avg_cad, max(v.cad) AS max_cad
+        WITH stream_samples AS (
+            SELECT s.activity_id, v.cad
             FROM activities_streams s
             JOIN activities a ON a.id = s.activity_id AND a.activity_type IN (1, 2, 3, 34, 40)
-            CROSS JOIN LATERAL json_array_elements(
-                CASE WHEN json_typeof(s.stream_waypoints) = 'array' THEN s.stream_waypoints ELSE '[]'::json END
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN json_typeof(s.stream_waypoints) = 'array' THEN s.stream_waypoints::jsonb ELSE '[]'::jsonb END
             ) AS t(elem)
             CROSS JOIN LATERAL (
-                SELECT CASE WHEN (t.elem ->> 'cad') ~ '^[0-9]{1,3}([.][0-9]+)?$' THEN (t.elem ->> 'cad')::numeric END AS cad
+                SELECT CASE WHEN (t.elem ->> 'cad') ~ '^[0-9]+([.][0-9]+)?$' THEN (t.elem ->> 'cad')::numeric END AS cad
             ) AS v
             WHERE s.stream_type = 3
-              AND v.cad > 0
-              AND v.cad <= 255
-            GROUP BY s.activity_id
+              AND v.cad IS NOT NULL
+        ),
+        stream_cad AS (
+            SELECT activity_id, avg(cad) AS avg_cad, max(cad) AS max_cad
+            FROM stream_samples
+            WHERE cad > 0
+            GROUP BY activity_id
         ),
         lap_cad AS (
             SELECT l.activity_id,
-                   avg(COALESCE(l.avg_cadence, l.max_cadence)) AS avg_cad,
-                   max(COALESCE(l.max_cadence, l.avg_cadence)) AS max_cad
+                   avg(COALESCE(NULLIF(l.avg_cadence, 0), NULLIF(l.max_cadence, 0))) AS avg_cad,
+                   max(COALESCE(NULLIF(l.max_cadence, 0), NULLIF(l.avg_cadence, 0))) AS max_cad
             FROM activity_laps l
             JOIN activities a ON a.id = l.activity_id AND a.activity_type IN (1, 2, 3, 34, 40)
-            WHERE COALESCE(l.avg_cadence, l.max_cadence) > 0
-              AND COALESCE(l.avg_cadence, 0) <= 255
-              AND COALESCE(l.max_cadence, 0) <= 255
+            WHERE COALESCE(NULLIF(l.avg_cadence, 0), NULLIF(l.max_cadence, 0)) IS NOT NULL
             GROUP BY l.activity_id
+        ),
+        out_of_range AS (
+            SELECT activity_id FROM stream_samples WHERE cad > 255
+            UNION
+            SELECT activity_id
+            FROM activity_laps
+            WHERE avg_cadence + COALESCE(avg_fractional_cadence, 0) > 255
+               OR max_cadence + COALESCE(max_fractional_cadence, 0) > 255
         ),
         decided AS (
             SELECT a.id,
                    a.average_cad,
                    a.max_cad,
-                   COALESCE(a.average_cad, sc.avg_cad, lc.avg_cad) AS per_leg_avg,
+                   COALESCE(NULLIF(a.average_cad, 0), sc.avg_cad, lc.avg_cad) AS per_leg_avg,
                    CASE
-                       WHEN a.max_cad IS NOT NULL OR a.average_cad IS NOT NULL THEN a.max_cad
+                       WHEN NULLIF(a.average_cad, 0) IS NOT NULL OR NULLIF(a.max_cad, 0) IS NOT NULL THEN a.max_cad
                        WHEN sc.avg_cad IS NOT NULL THEN sc.max_cad
-                       ELSE lc.max_cad
+                       WHEN lc.avg_cad IS NOT NULL THEN lc.max_cad
+                       ELSE a.max_cad
                    END AS per_leg_max
             FROM activities a
             LEFT JOIN stream_cad sc ON sc.activity_id = a.id
             LEFT JOIN lap_cad lc ON lc.activity_id = a.id
             WHERE a.activity_type IN (1, 2, 3, 34, 40)
               AND COALESCE(a.max_cad, 0) <= 255
+              AND NOT EXISTS (SELECT 1 FROM out_of_range o WHERE o.activity_id = a.id)
         )
         SELECT id, average_cad, max_cad, per_leg_avg, per_leg_max
         FROM decided
@@ -123,8 +137,7 @@ def upgrade() -> None:
         SET stream_waypoints = (
             SELECT jsonb_agg(
                 CASE
-                    WHEN (elem ->> 'cad') IS NULL OR (elem ->> 'cad') !~ '^[0-9]{1,3}([.][0-9]+)?$' THEN elem
-                    WHEN (elem ->> 'cad')::numeric > 255 THEN elem
+                    WHEN (elem ->> 'cad') IS NULL OR (elem ->> 'cad') !~ '^[0-9]+([.][0-9]+)?$' THEN elem
                     ELSE jsonb_set(elem, '{cad}', to_jsonb(round((elem ->> 'cad')::numeric * 2)::int))
                 END
                 ORDER BY ord
@@ -141,21 +154,13 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE activity_laps l
-        SET avg_cadence = CASE WHEN d.avg_ok THEN round((l.avg_cadence + COALESCE(l.avg_fractional_cadence, 0)) * 2)
-                               ELSE l.avg_cadence END,
-            max_cadence = CASE WHEN d.max_ok THEN round((l.max_cadence + COALESCE(l.max_fractional_cadence, 0)) * 2)
-                               ELSE l.max_cadence END,
-            avg_fractional_cadence = CASE WHEN d.avg_ok THEN NULL ELSE l.avg_fractional_cadence END,
-            max_fractional_cadence = CASE WHEN d.max_ok THEN NULL ELSE l.max_fractional_cadence END
-        FROM (
-            SELECT k.id,
-                   k.avg_cadence IS NOT NULL AND k.avg_cadence + COALESCE(k.avg_fractional_cadence, 0) <= 255 AS avg_ok,
-                   k.max_cadence IS NOT NULL AND k.max_cadence + COALESCE(k.max_fractional_cadence, 0) <= 255 AS max_ok
-            FROM activity_laps k
-            JOIN cadence_spm_migration_rows r ON r.activity_id = k.activity_id
-        ) AS d
-        WHERE d.id = l.id
-          AND (d.avg_ok OR d.max_ok)
+        SET avg_cadence = round((l.avg_cadence + COALESCE(l.avg_fractional_cadence, 0)) * 2),
+            max_cadence = round((l.max_cadence + COALESCE(l.max_fractional_cadence, 0)) * 2),
+            avg_fractional_cadence = CASE WHEN l.avg_cadence IS NULL THEN l.avg_fractional_cadence END,
+            max_fractional_cadence = CASE WHEN l.max_cadence IS NULL THEN l.max_fractional_cadence END
+        FROM cadence_spm_migration_rows r
+        WHERE r.activity_id = l.activity_id
+          AND (l.avg_cadence IS NOT NULL OR l.max_cadence IS NOT NULL)
         """
     )
 
@@ -181,8 +186,7 @@ def downgrade() -> None:
         SET stream_waypoints = (
             SELECT jsonb_agg(
                 CASE
-                    WHEN (elem ->> 'cad') IS NULL OR (elem ->> 'cad') !~ '^[0-9]{1,3}([.][0-9]+)?$' THEN elem
-                    WHEN (elem ->> 'cad')::numeric > 510 THEN elem
+                    WHEN (elem ->> 'cad') IS NULL OR (elem ->> 'cad') !~ '^[0-9]+([.][0-9]+)?$' THEN elem
                     ELSE jsonb_set(elem, '{cad}', to_jsonb(floor((elem ->> 'cad')::numeric / 2)::int))
                 END
                 ORDER BY ord
@@ -199,8 +203,8 @@ def downgrade() -> None:
     op.execute(
         """
         UPDATE activity_laps l
-        SET avg_cadence = CASE WHEN l.avg_cadence <= 510 THEN l.avg_cadence / 2 ELSE l.avg_cadence END,
-            max_cadence = CASE WHEN l.max_cadence <= 510 THEN l.max_cadence / 2 ELSE l.max_cadence END
+        SET avg_cadence = l.avg_cadence / 2,
+            max_cadence = l.max_cadence / 2
         FROM cadence_spm_migration_rows r
         WHERE r.activity_id = l.activity_id
         """
