@@ -73,7 +73,7 @@ def _parse_laps(
         # summed from the smoothed stream instead.
         lap_ascent, lap_descent = None, None
         if smoothed_ele_waypoints and lap.end_time is not None:
-            lap_ele = activity_file_import_parser_utils.filter_waypoints_by_time_range(
+            lap_ele = activity_file_import_parser_utils.slice_lap_elevation(
                 smoothed_ele_waypoints,
                 core_timezone.format_utc(lap.start_time),
                 core_timezone.format_utc(lap.end_time),

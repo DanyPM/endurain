@@ -379,6 +379,29 @@ class TestParseLapsElevation:
         assert laps[0]["total_descent"] is not None
         assert laps[0]["total_descent"] < 100
 
+    def test_lap_sums_match_activity_when_boundary_falls_between_samples(self):
+        """The climb between lap 1's last sample and lap 2's first sample is counted once, in lap 2."""
+        start = datetime(2026, 6, 20, 8, 0, 0, tzinfo=UTC)
+        ele_waypoints = [
+            {"time": (start + timedelta(seconds=10 * i)).strftime("%Y-%m-%dT%H:%M:%S"), "ele": 100.0 + 10 * i}
+            for i in range(31)
+        ]
+        smoothed = activities_computation.smooth_elevation_stream(ele_waypoints)
+        lap1_end = start + timedelta(seconds=150)
+        lap2_start = start + timedelta(seconds=155)
+        end = start + timedelta(seconds=300)
+        tcx_file = SimpleNamespace(
+            laps=[
+                _make_lap(start, lap1_end, [self._trackpoint(start), self._trackpoint(lap1_end)]),
+                _make_lap(lap2_start, end, [self._trackpoint(lap2_start), self._trackpoint(end)]),
+            ]
+        )
+
+        laps = tcx_utils._parse_laps(tcx_file, smoothed)
+
+        activity_gain, _ = activities_computation.sum_elevation_deltas(smoothed)
+        assert abs(laps[0]["total_ascent"] + laps[1]["total_ascent"] - activity_gain) <= 1
+
     def test_flat_altitude_stores_zero(self):
         """A flat lap stores 0 m ascent/descent, not None."""
         start = datetime(2026, 6, 20, 8, 0, 0, tzinfo=UTC)

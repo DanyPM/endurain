@@ -52,7 +52,7 @@ def _fill_missing_lap_elevation(laps: list[dict], ele_waypoints: list[dict]) -> 
     for lap in laps_to_fill:
         start = lap["start_time"]
         end = start + timedelta(seconds=lap["total_elapsed_time"])
-        lap_ele = activity_file_import_parser_utils.filter_waypoints_by_time_range(
+        lap_ele = activity_file_import_parser_utils.slice_lap_elevation(
             smoothed,
             core_timezone.format_utc(start),
             core_timezone.format_utc(end),

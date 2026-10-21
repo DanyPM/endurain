@@ -173,6 +173,38 @@ def filter_waypoints_by_time_range(
     return [wp for wp in waypoints if start_dt <= _parse_utc(wp["time"]) <= end_dt]
 
 
+def slice_lap_elevation(
+    smoothed_ele_waypoints: list[dict],
+    start_time: str,
+    end_time: str,
+) -> list[dict]:
+    """Return a lap's slice of the once-smoothed elevation stream.
+
+    The slice is ``[start_time, end_time]`` plus the sample just before it when
+    the lap's first sample is later than ``start_time``. Laps whose boundary
+    falls between two samples then count the step across it once, in the later
+    lap, and consecutive lap sums add up to the activity total. A sample exactly
+    at ``start_time`` already ends the previous lap and is not extended.
+
+    Args:
+        smoothed_ele_waypoints: Time-ordered smoothed elevation stream.
+        start_time: ISO 8601 lap start (inclusive).
+        end_time: ISO 8601 lap end (inclusive).
+
+    Returns:
+        The lap's elevation samples; empty when none fall within the lap.
+    """
+    start_dt = _parse_utc(start_time)
+    end_dt = _parse_utc(end_time)
+    indices = [i for i, wp in enumerate(smoothed_ele_waypoints) if start_dt <= _parse_utc(wp["time"]) <= end_dt]
+    if not indices:
+        return []
+    first = indices[0]
+    if first > 0 and _parse_utc(smoothed_ele_waypoints[first]["time"]) > start_dt:
+        first -= 1
+    return smoothed_ele_waypoints[first : indices[-1] + 1]
+
+
 def _compute_lap_metrics(
     start_time: str,
     end_time: str,
@@ -210,7 +242,7 @@ def _compute_lap_metrics(
     # The metric helpers live in this package's dependency-free computation module.
     import modules.activities.computation as activities_computation
 
-    lap_ele = filter_waypoints_by_time_range(
+    lap_ele = slice_lap_elevation(
         smoothed_ele_waypoints,
         start_time,
         end_time,
