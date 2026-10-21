@@ -507,3 +507,32 @@ class TestParseTcxFileElevation:
         activity = result["activity"]
         assert activity.elevation_gain == 0
         assert activity.elevation_loss == 0
+
+    def test_trackpoints_without_altitude_are_skipped(self):
+        """Trackpoints whose elevation is None stay out of the elevation stream."""
+        start = datetime(2026, 6, 20, 8, 0, 0, tzinfo=UTC)
+        trackpoints = [
+            {
+                "time": start + timedelta(seconds=10 * i),
+                "latitude": 40.0 + i * 0.001,
+                "longitude": -3.0,
+                "elevation": None if i % 3 == 0 else 100.0 + i,
+            }
+            for i in range(30)
+        ]
+        mock_tcx = self._mock_tcx(trackpoints=[SimpleNamespace(time=tp["time"], tpx_ext={}) for tp in trackpoints])
+        mock_tcx.trackpoints_to_dict = lambda: trackpoints
+
+        with (
+            patch("tcxreader.TCXReader") as mock_reader_class,
+            patch(
+                "modules.activities.activity_file_import.tcx_utils.activity_file_import_parser_utils.resolve_timezone_from_lat_lon",
+                return_value="UTC",
+            ),
+        ):
+            mock_reader_class.return_value.read.return_value = mock_tcx
+            result = tcx_utils.parse_tcx_file(file="dummy.tcx", user_id=1, default_timezone=_SERVER_TZ)
+
+        assert len(result["ele_waypoints"]) == 20
+        assert all(wp["ele"] is not None for wp in result["ele_waypoints"])
+        assert result["activity"].elevation_gain is not None

@@ -593,6 +593,7 @@ def parse_gpx_file(
 
         activity = _build_activity_schema(state, user_id)
 
+        smoothed_ele_waypoints = activities_computation.smooth_elevation_stream(state.ele_waypoints)
         laps = []
         for segment_waypoints in state.lat_lon_segments:
             laps.extend(
@@ -604,6 +605,7 @@ def parse_gpx_file(
                     state.cad_waypoints,
                     state.vel_waypoints,
                     measured_vel_times=state.measured_vel_times,
+                    smoothed_ele_waypoints=smoothed_ele_waypoints,
                 )
             )
 

@@ -174,7 +174,7 @@ def _extract_waypoints(
             "ele": tp["elevation"],
         }
         for tp in trackpoints
-        if "elevation" in tp and tp.get("time") is not None
+        if tp.get("elevation") is not None and tp.get("time") is not None
     ]
 
     power_waypoints = [

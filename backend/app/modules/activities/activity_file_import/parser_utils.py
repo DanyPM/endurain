@@ -313,6 +313,7 @@ def generate_activity_laps(
     vel_waypoints: list[dict],
     distance_per_lap_km: float = 1.0,
     measured_vel_times: set[str] | None = None,
+    smoothed_ele_waypoints: list[dict] | None = None,
 ) -> list[LapMetrics]:
     """Split waypoints into distance-based laps and compute metrics.
 
@@ -327,6 +328,10 @@ def generate_activity_laps(
         measured_vel_times: Timestamps of velocity samples that are real
             measurements, for sources that emit placeholder samples; ``None``
             treats every sample as measured.
+        smoothed_ele_waypoints: ``ele_waypoints`` already smoothed once (see
+            smooth_elevation_stream). Callers that build laps for several
+            segments of one activity pass it to avoid re-smoothing the stream;
+            when None, ``ele_waypoints`` is smoothed here.
 
     Returns:
         List of lap dicts with computed metrics.
@@ -340,7 +345,8 @@ def generate_activity_laps(
 
     # Smooth the elevation stream once for the whole activity so the per-lap
     # slices partition the activity-level gain/loss exactly.
-    smoothed_ele_waypoints = activities_computation.smooth_elevation_stream(ele_waypoints) if ele_waypoints else []
+    if smoothed_ele_waypoints is None:
+        smoothed_ele_waypoints = activities_computation.smooth_elevation_stream(ele_waypoints)
 
     for i in range(1, len(lat_lon_waypoints)):
         prev_point = lat_lon_waypoints[i - 1]
