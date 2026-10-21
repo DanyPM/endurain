@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import modules.garmin.bulk_import_utils as garmin_bulk_import_utils
 
@@ -92,6 +93,19 @@ class TestLoadSummarizedActivities:
 
         assert index == {START_S + 1: "Valid"}
 
+    def test_keeps_the_first_entry_and_warns_when_two_share_a_start_second(self, monkeypatch):
+        logger = Mock()
+        monkeypatch.setattr(garmin_bulk_import_utils, "logger", logger)
+        payload = [
+            {"activityId": 1, "name": "First", "startTimeGmt": START_MS},
+            {"activityId": 2, "name": "Second", "startTimeGmt": START_MS + 500},
+        ]
+
+        index = _load({"summarizedActivities.json": json.dumps(payload).encode()})
+
+        assert index == {START_S: "First"}
+        logger.warning.assert_called_once()
+
     def test_ignores_unrelated_members(self):
         assert _load({"activity.fit": b"binary-ish", "user_0_gear.json": b"[]"}) == {}
 
@@ -115,11 +129,23 @@ class TestFindNameForStartTime:
 
         assert garmin_bulk_import_utils.find_name_for_start_time(self._index(), start) is None
 
-    def test_nearest_entry_wins(self):
-        index = {START_S: "Far", START_S + 40: "Near"}
+    def test_single_entry_in_range_matches_when_others_are_outside(self):
+        index = {START_S: "Ride", START_S + 600: "Run"}
+        start = datetime.fromtimestamp(START_S + 30, tz=UTC)
+
+        assert garmin_bulk_import_utils.find_name_for_start_time(index, start) == "Ride"
+
+    def test_two_entries_in_range_give_no_name(self):
+        index = {START_S: "Bike", START_S + 40: "Run"}
         start = datetime.fromtimestamp(START_S + 35, tz=UTC)
 
-        assert garmin_bulk_import_utils.find_name_for_start_time(index, start) == "Near"
+        assert garmin_bulk_import_utils.find_name_for_start_time(index, start) is None
+
+    def test_exact_match_wins_over_other_entries_in_range(self):
+        index = {START_S: "Bike", START_S + 40: "Run"}
+        start = datetime.fromtimestamp(START_S + 40, tz=UTC)
+
+        assert garmin_bulk_import_utils.find_name_for_start_time(index, start) == "Run"
 
     def test_empty_index(self):
         assert garmin_bulk_import_utils.find_name_for_start_time({}, datetime.now(tz=UTC)) is None

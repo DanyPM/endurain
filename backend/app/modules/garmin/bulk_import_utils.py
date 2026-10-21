@@ -78,7 +78,8 @@ def load_summarized_activities(
 
     Returns:
         Activity names keyed by start time as epoch seconds (derived from
-        ``startTimeGmt`` in milliseconds). Empty when no summary file is usable.
+        ``startTimeGmt`` in milliseconds). When several entries share a start
+        second, the first one read wins. Empty when no summary file is usable.
     """
     index: dict[int, str] = {}
     for member_name in sorted(name for name in member_names if is_summary_member(name)):
@@ -100,7 +101,14 @@ def load_summarized_activities(
             name = entry.get("name")
             if not isinstance(start_ms, (int, float)) or not name:
                 continue
-            index[int(start_ms) // 1000] = str(name)
+            start_s = int(start_ms) // 1000
+            if start_s in index:
+                logger.warning(
+                    "Bulk file import: two Garmin summary entries share a start second, keeping the first",
+                    extra=core_logger.context(console=True, file=member_name, start_time=start_s),
+                )
+                continue
+            index[start_s] = str(name)
 
     logger.info(
         "Bulk file import: loaded activity names from Garmin summary files",
@@ -122,9 +130,10 @@ def find_name_for_start_time(
         tolerance_s: Maximum allowed difference in seconds.
 
     Returns:
-        The matching name, preferring an exact epoch match and falling back
-        to the nearest entry within ``tolerance_s``, or None when nothing
-        matches.
+        The name of the entry with the exact start second, else of the only
+        entry within ``tolerance_s``. None when nothing matches, or when several
+        entries are within range, since activities started close together (a
+        brick workout, a split recording) could otherwise take each other's names.
     """
     if not index:
         return None
@@ -134,10 +143,5 @@ def find_name_for_start_time(
     if exact is not None:
         return exact
 
-    best: str | None = None
-    best_delta = tolerance_s + 1
-    for entry_epoch, name in index.items():
-        delta = abs(entry_epoch - epoch)
-        if delta <= tolerance_s and delta < best_delta:
-            best, best_delta = name, delta
-    return best
+    candidates = [name for entry_epoch, name in index.items() if abs(entry_epoch - epoch) <= tolerance_s]
+    return candidates[0] if len(candidates) == 1 else None

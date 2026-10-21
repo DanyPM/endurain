@@ -19,8 +19,6 @@ import modules.garmin.bulk_import_utils as garmin_bulk_import_utils
 
 FORMAT_NAME = "garmin"
 
-IMPORT_SOURCE_LABEL = "Garmin bulk import"
-
 
 @dataclass(frozen=True)
 class GarminBulkImportSource(activity_ingestion_integration.BulkImportSource):
@@ -33,22 +31,7 @@ class GarminBulkImportSource(activity_ingestion_integration.BulkImportSource):
 
     activity_names: dict[int, str] = field(default_factory=dict)
 
-    def metadata_for(self, file_base_name: str) -> dict:
-        """Build the import record stamped on activities from one file.
-
-        Args:
-            file_base_name: The original (pre-decompression) base filename.
-
-        Returns:
-            The metadata dict, empty when the import carries no start timestamp.
-        """
-        if not self.import_initiated_time:
-            return {}
-        return {
-            "import_dict": activity_ingestion_integration.build_import_record(
-                self.import_initiated_time, IMPORT_SOURCE_LABEL
-            )
-        }
+    import_source_label = "Garmin bulk import"
 
     def apply_metadata(
         self,

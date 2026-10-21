@@ -135,6 +135,9 @@ class BulkImportSource:
 
     kind = "bulk_import"
 
+    #: Origin recorded as ``import_source`` on each imported activity.
+    import_source_label = "Basic bulk import"
+
     def metadata_for(self, file_base_name: str) -> dict:
         """Build the supplemental metadata to apply to activities from one file.
 
@@ -147,7 +150,7 @@ class BulkImportSource:
         """
         if not self.import_initiated_time:
             return {}
-        return {"import_dict": build_import_record(self.import_initiated_time)}
+        return {"import_dict": build_import_record(self.import_initiated_time, self.import_source_label)}
 
     def should_import(
         self,
