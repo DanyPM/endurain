@@ -67,6 +67,11 @@ def _parse_laps(
         lap_avg_pw, lap_max_pw, lap_np = _parse_lap_power(lap)
 
         max_spd_val = lap.tpx_ext_stats.get("Speed", {}).get("max", 0)
+        # tcxreader derives lap cadence only from <Cadence>; laps that carry it
+        # solely in the TPX RunCadence extension fall back to its stats.
+        run_cadence = lap.tpx_ext_stats.get("RunCadence", {})
+        cadence_avg = lap.cadence_avg if lap.cadence_avg is not None else run_cadence.get("avg")
+        cadence_max = lap.cadence_max if lap.cadence_max is not None else run_cadence.get("max")
 
         # tcxreader's lap.ascent/descent are raw positive/negative delta sums,
         # which GPS altitude noise inflates several-fold, so lap elevation is
@@ -99,8 +104,8 @@ def _parse_laps(
                 "total_calories": (round(lap.calories) if lap.calories else None),
                 "avg_heart_rate": (round(lap.hr_avg) if lap.hr_avg else None),
                 "max_heart_rate": (round(lap.hr_max) if lap.hr_max else None),
-                "avg_cadence": (round(lap.cadence_avg) if lap.cadence_avg else None),
-                "max_cadence": (round(lap.cadence_max) if lap.cadence_max else None),
+                "avg_cadence": (round(cadence_avg) if cadence_avg else None),
+                "max_cadence": (round(cadence_max) if cadence_max else None),
                 "avg_power": (round(lap_avg_pw) if lap_avg_pw else None),
                 "max_power": (round(lap_max_pw) if lap_max_pw else None),
                 "total_ascent": lap_ascent,
@@ -422,6 +427,14 @@ def parse_tcx_file(
             if recomputed_max:
                 tcx_file.hr_max = recomputed_max
 
+        # tcxreader derives cadence stats only from <Cadence>; files that carry
+        # cadence solely in the TPX RunCadence extension get them from the stream.
+        cad_wp = waypoints["cad_waypoints"]
+        if tcx_file.cadence_avg is None and cad_wp:
+            cad_avg, cad_max = activities_computation.calculate_avg_and_max(cad_wp, "cad")
+            tcx_file.cadence_avg = cad_avg or None
+            tcx_file.cadence_max = cad_max or None
+
         activity = _build_activity(
             tcx_file=tcx_file,
             user_id=user_id,
@@ -441,11 +454,11 @@ def parse_tcx_file(
         )
 
         # Normalize running cadence to steps per minute (spm). TCX stores
-        # running <Cadence> as a single-leg rate (rpm); spm = rpm x2. Some
-        # sources (the RunCadence extension, treadmill apps) already report
-        # spm, so the decision is made once per activity from the
-        # representative avg and already-spm data is left untouched. TCX has
-        # no fractional cadence.
+        # running cadence (<Cadence> or the RunCadence extension) as a
+        # single-leg rate (rpm); spm = rpm x2. Some sources (treadmill apps)
+        # already report spm, so the decision is made once per activity from
+        # the representative avg and already-spm data is left untouched. TCX
+        # has no fractional cadence.
         if activity_constants.is_running_cadence_type(
             activity_type
         ) and activities_computation.running_cadence_is_per_leg(activity.average_cad):

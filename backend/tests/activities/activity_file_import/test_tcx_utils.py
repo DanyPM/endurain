@@ -315,6 +315,52 @@ class TestUtilsTcx:
 
         assert result["activity"].distance == 5000
 
+    def test_parse_tcx_file_doubles_run_cadence_only_running_file(self, tmp_path):
+        """A running TCX with cadence only in TPX RunCadence derives and doubles it to spm."""
+        trackpoints = "".join(
+            f"""
+            <Trackpoint>
+              <Time>2026-06-20T08:00:{second:02d}Z</Time>
+              <Position><LatitudeDegrees>40.0{second:02d}</LatitudeDegrees><LongitudeDegrees>-3.0</LongitudeDegrees></Position>
+              <DistanceMeters>{second * 3}</DistanceMeters>
+              <Extensions><TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2"><RunCadence>{cadence}</RunCadence></TPX></Extensions>
+            </Trackpoint>"""
+            for second, cadence in ((0, 84), (10, 86), (20, 88), (30, 90))
+        )
+        tcx_path = tmp_path / "run_cadence.tcx"
+        tcx_path.write_text(
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+  <Activities>
+    <Activity Sport="Running">
+      <Id>2026-06-20T08:00:00Z</Id>
+      <Lap StartTime="2026-06-20T08:00:00Z">
+        <TotalTimeSeconds>30</TotalTimeSeconds>
+        <DistanceMeters>90</DistanceMeters>
+        <Track>{trackpoints}
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>
+""",
+            encoding="utf-8",
+        )
+
+        with patch(
+            "modules.activities.activity_file_import.tcx_utils.activity_file_import_parser_utils.resolve_timezone_from_lat_lon",
+            return_value="UTC",
+        ):
+            result = tcx_utils.parse_tcx_file(file=str(tcx_path), user_id=1, default_timezone=_SERVER_TZ)
+
+        activity = result["activity"]
+        # mean([84, 86, 88, 90]) = 87 rpm, max 90 rpm.
+        assert activity.average_cad == 174
+        assert activity.max_cad == 180
+        assert [wp["cad"] for wp in result["cad_waypoints"]] == [168, 172, 176, 180]
+        assert result["laps"][0]["avg_cadence"] == 174
+        assert result["laps"][0]["max_cadence"] == 180
+
 
 def _make_lap(start, end, trackpoints, **overrides):
     """
