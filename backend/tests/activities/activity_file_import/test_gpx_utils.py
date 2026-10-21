@@ -512,6 +512,25 @@ class TestParseGpxFile:
         assert all(lap["total_ascent"] == 0 for lap in result["laps"])
         assert all(lap["total_descent"] == 0 for lap in result["laps"])
 
+    def test_invalid_elevation_stream_stores_none(self):
+        """
+        Test an elevation stream with no valid values stores None, not 0 m.
+        """
+        start = datetime(2025, 1, 1, 0, 0, 0)
+        state = gpx_utils.ParseState(
+            timezone=_SERVER_TZ,
+            activity_type="Ride",
+            first_waypoint_time=start,
+            last_waypoint_time=start + timedelta(minutes=1),
+            ele_waypoints=[{"time": "2025-01-01T00:00:00", "ele": "n/a"}],
+        )
+
+        gpx_utils._compute_derived_metrics(state)
+        activity = gpx_utils._build_activity_schema(state, user_id=1)
+
+        assert activity.elevation_gain is None
+        assert activity.elevation_loss is None
+
     def test_parse_gpx_file_smooths_elevation_once_for_all_segments(
         self,
         tmp_path,

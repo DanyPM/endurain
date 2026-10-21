@@ -1,6 +1,6 @@
 """Tests for FIT activity file import utilities."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import modules.activities.activity_file_import.fit_frames as fit_frames
 import modules.activities.activity_file_import.fit_utils as fit_utils
@@ -312,24 +312,40 @@ class TestUtilsFit:
         assert activity.elevation_gain == 0
         assert activity.elevation_loss == 0
 
-    def test_create_activity_objects_fills_lap_elevation_from_waypoints(self):
-        """Lap ascent/descent missing from the FIT lap frame are computed from the altitude record stream."""
+    def test_create_activity_objects_invalid_elevation_stays_none(self):
+        """An altitude stream with no valid values leaves session and lap elevation None, not 0."""
         record = _session_record(None)
-        record["ele_waypoints"] = [
-            {"time": "2026-06-20T08:20:00", "ele": 100},
-            {"time": "2026-06-20T08:20:10", "ele": 100},
-            {"time": "2026-06-20T08:20:20", "ele": 110},
-            {"time": "2026-06-20T08:20:30", "ele": 120},
-            {"time": "2026-06-20T08:20:40", "ele": 130},
-            {"time": "2026-06-20T08:20:50", "ele": 130},
-            {"time": "2026-06-20T08:21:00", "ele": 120},
-            {"time": "2026-06-20T08:21:10", "ele": 110},
-            {"time": "2026-06-20T08:21:20", "ele": 110},
-        ]
+        record["ele_waypoints"] = [{"time": f"2026-06-20T08:20:{i:02d}", "ele": None} for i in range(0, 60, 10)]
         record["laps"] = [
             {
                 "start_time": datetime(2026, 6, 20, 8, 20, 0, tzinfo=UTC),
-                "total_elapsed_time": 80.0,
+                "total_elapsed_time": 50.0,
+                "total_ascent": None,
+                "total_descent": None,
+            }
+        ]
+
+        activities_list = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)
+
+        activity = activities_list[0]["activity"]
+        assert activity.elevation_gain is None
+        assert activity.elevation_loss is None
+        assert record["laps"][0]["total_ascent"] is None
+        assert record["laps"][0]["total_descent"] is None
+
+    def test_create_activity_objects_fills_lap_elevation_from_waypoints(self):
+        """Lap ascent/descent missing from the FIT lap frame are computed from the altitude record stream."""
+        record = _session_record(None)
+        # 1 Hz: 60 s climbing 1 m/s, then 60 s descending, long enough for the smoothing windows.
+        start = datetime(2026, 6, 20, 8, 20, 0, tzinfo=UTC)
+        record["ele_waypoints"] = [
+            {"time": (start + timedelta(seconds=i)).strftime("%Y-%m-%dT%H:%M:%S"), "ele": 100 + min(i, 120 - i)}
+            for i in range(121)
+        ]
+        record["laps"] = [
+            {
+                "start_time": start,
+                "total_elapsed_time": 120.0,
                 "total_ascent": None,
                 "total_descent": None,
             }

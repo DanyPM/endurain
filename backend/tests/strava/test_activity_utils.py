@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import Mock
 
 import pytest
@@ -252,3 +253,38 @@ class TestProcessActivity:
 
         assert activity_utils.process_activity(Mock(id=555), 1, Mock(), Mock(), Mock()) is None
         assert seen == {}
+
+
+class TestFetchAndProcessActivityLapsElevation:
+    """Lap ascent/descent computed from the Strava altitude stream."""
+
+    def _lap(self) -> Mock:
+        lap = Mock()
+        lap.start_index = 0
+        lap.end_index = 2
+        lap.start_date_local = datetime(2025, 1, 1, 8, 0, 0)
+        lap.average_heartrate = None
+        lap.max_heartrate = None
+        lap.average_speed = None
+        lap.max_speed = None
+        return lap
+
+    def _process(self, ele_stream: list[dict]) -> dict:
+        client = Mock()
+        client.get_activity_laps.return_value = [self._lap()]
+        laps = activity_utils.fetch_and_process_activity_laps(client, 1, 1, [(True, 4, ele_stream)])
+        return laps[0]
+
+    def test_invalid_altitude_stream_leaves_lap_elevation_none(self):
+        """An altitude stream with no valid values yields None, not 0 m."""
+        lap = self._process([{"ele": None}, {"ele": None}, {"ele": None}])
+
+        assert lap["total_ascent"] is None
+        assert lap["total_descent"] is None
+
+    def test_flat_altitude_stream_stores_zero(self):
+        """A flat altitude stream yields a genuine 0 m ascent/descent."""
+        lap = self._process([{"ele": 100.0}, {"ele": 100.0}, {"ele": 100.0}])
+
+        assert lap["total_ascent"] == 0
+        assert lap["total_descent"] == 0

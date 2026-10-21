@@ -219,7 +219,7 @@ def compute_elevation_gain_and_loss(
     median_window: int = ELEVATION_MEDIAN_WINDOW,
     avg_window: int = ELEVATION_AVG_WINDOW,
     threshold: float = ELEVATION_THRESHOLD,
-) -> tuple[float, float]:
+) -> tuple[float, float] | tuple[None, None]:
     """Compute total elevation gain/loss in meters from waypoints.
 
     Applies a median filter then a moving-average smoother before
@@ -232,12 +232,15 @@ def compute_elevation_gain_and_loss(
         threshold: Minimum |delta| (m) counted toward gain/loss.
 
     Returns:
-        Tuple of (gain_m, loss_m).
+        Tuple of (gain_m, loss_m); (0.0, 0.0) for a flat stream, and
+        (None, None) when the stream is empty or holds no valid values.
     """
     try:
         values = [float(waypoint["ele"]) for waypoint in elevations]
-    except (ValueError, KeyError):
-        return 0, 0
+    except (ValueError, KeyError, TypeError):
+        return None, None
+    if not values:
+        return None, None
 
     filtered = _smooth_elevations(values, median_window, avg_window)
     return sum_elevation_deltas([{"ele": ele} for ele in filtered], threshold)

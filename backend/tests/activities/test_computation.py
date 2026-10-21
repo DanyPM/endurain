@@ -108,11 +108,12 @@ class TestCalculateRobustMax:
 
 
 class TestComputeElevationGainAndLoss:
-    def test_returns_zero_for_empty_list(self):
-        assert compute_elevation_gain_and_loss([]) == (0.0, 0.0)
+    def test_returns_none_for_empty_list(self):
+        assert compute_elevation_gain_and_loss([]) == (None, None)
 
-    def test_returns_zero_for_invalid_data(self):
-        assert compute_elevation_gain_and_loss([{"no_ele": 100}]) == (0.0, 0.0)
+    @pytest.mark.parametrize("waypoints", [[{"no_ele": 100}], [{"ele": "n/a"}], [{"ele": None}]])
+    def test_returns_none_for_invalid_data(self, waypoints):
+        assert compute_elevation_gain_and_loss(waypoints) == (None, None)
 
     def test_flat_elevation_returns_zero(self):
         result = compute_elevation_gain_and_loss([{"ele": 100}, {"ele": 100}, {"ele": 100}])

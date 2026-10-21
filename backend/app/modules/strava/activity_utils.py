@@ -686,8 +686,8 @@ def fetch_and_process_activity_laps(
                 "max_cadence": round(cad_max) if cad_stream else None,
                 "avg_power": round(power_avg) if power_stream else None,
                 "max_power": round(power_max) if power_stream else None,
-                "total_ascent": round(ele_gain) if ele_stream else None,
-                "total_descent": round(ele_loss) if ele_stream else None,
+                "total_ascent": round(ele_gain) if ele_gain is not None else None,
+                "total_descent": round(ele_loss) if ele_loss is not None else None,
                 "normalized_power": round(np) if np else None,
                 "enhanced_avg_pace": (
                     1 / lap.average_speed if lap.average_speed != 0 and lap.average_speed is not None else None

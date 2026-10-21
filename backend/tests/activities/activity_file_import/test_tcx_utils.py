@@ -476,9 +476,9 @@ class TestParseTcxFileElevation:
         result = self._run_parse(mock_tcx, self._fake_waypoints(ele_waypoints))
 
         activity = result["activity"]
-        assert activity.elevation_gain is not None
-        assert 20 <= activity.elevation_gain <= 30
-        assert activity.elevation_loss == 0
+        expected_gain, expected_loss = activities_computation.compute_elevation_gain_and_loss(ele_waypoints)
+        assert activity.elevation_gain == round(expected_gain) > 0
+        assert activity.elevation_loss == round(expected_loss) == 0
 
     def test_no_altitude_keeps_elevation_none(self):
         """Without altitude data elevation gain/loss stay None."""

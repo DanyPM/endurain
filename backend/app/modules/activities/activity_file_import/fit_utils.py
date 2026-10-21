@@ -34,7 +34,7 @@ def _fill_missing_lap_elevation(laps: list[dict], ele_waypoints: list[dict]) -> 
         laps: Lap dicts from parse_frame_lap; updated in place.
         ele_waypoints: Altitude record stream dicts with time/ele keys.
     """
-    if not ele_waypoints:
+    if not ele_waypoints or not all(isinstance(wp.get("ele"), int | float) for wp in ele_waypoints):
         return
 
     laps_to_fill = [
@@ -48,8 +48,6 @@ def _fill_missing_lap_elevation(laps: list[dict], ele_waypoints: list[dict]) -> 
         return
 
     smoothed = activities_computation.smooth_elevation_stream(ele_waypoints)
-    if not smoothed:
-        return
 
     for lap in laps_to_fill:
         start = lap["start_time"]
