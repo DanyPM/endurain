@@ -420,7 +420,7 @@ def parse_tcx_file(
         power_wp = waypoints["power_waypoints"]
         # Pause-derived values are parser-internal: keep them out of the
         # payload's waypoint streams.
-        lat_lon_segments = waypoints.pop("lat_lon_segments", None) or [lat_lon_wp]
+        lat_lon_segments = waypoints.pop("lat_lon_segments")
         moving_time = waypoints.pop("moving_time", 0.0)
 
         distance = round(tcx_file.distance) if tcx_file.distance else 0

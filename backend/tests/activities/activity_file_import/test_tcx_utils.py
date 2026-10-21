@@ -173,6 +173,7 @@ class TestUtilsTcx:
 
         fake_waypoints = {
             "lat_lon_waypoints": [],
+            "lat_lon_segments": [],
             "hr_waypoints": [
                 {"time": "2026-06-20T08:00:00", "hr": 0},
                 {"time": "2026-06-20T08:00:10", "hr": 150},
@@ -232,6 +233,12 @@ class TestUtilsTcx:
             "lat_lon_waypoints": [
                 {"time": "2026-06-20T08:20:03", "lat": 40.0, "lon": -3.0},
                 {"time": "2026-06-20T08:25:03", "lat": 40.01, "lon": -3.0},
+            ],
+            "lat_lon_segments": [
+                [
+                    {"time": "2026-06-20T08:20:03", "lat": 40.0, "lon": -3.0},
+                    {"time": "2026-06-20T08:25:03", "lat": 40.01, "lon": -3.0},
+                ]
             ],
             "hr_waypoints": [],
             "cad_waypoints": [],
@@ -414,6 +421,45 @@ class TestUtilsTcx:
         # ~0.01 deg of latitude ≈ 1.1 km; the ~1.1 km pause hop is excluded.
         assert 1000 < result["activity"].distance < 1200
 
+    def test_parse_tcx_file_distance_fallback_is_zero_when_pause_leaves_no_segment(self):
+        """Two GPS points split by a pause form no segment, so the fallback distance is 0."""
+        dt_start = datetime(2026, 6, 20, 8, 0, 0, tzinfo=UTC)
+        dt_end = dt_start + timedelta(seconds=20)
+
+        mock_tcx = SimpleNamespace(
+            activity_type="Running",
+            distance=None,
+            start_time=dt_start,
+            end_time=dt_end,
+            ascent=None,
+            descent=None,
+            hr_avg=None,
+            hr_max=None,
+            cadence_avg=None,
+            cadence_max=None,
+            calories=None,
+            laps=[],
+            trackpoints=[],
+        )
+        trackpoints = [
+            {"time": dt_start, "latitude": 40.0, "longitude": -3.0},
+            {"time": dt_end, "latitude": 40.01, "longitude": -3.0},
+        ]
+        mock_tcx.trackpoints_to_dict = lambda: trackpoints
+
+        with (
+            patch("tcxreader.TCXReader") as mock_reader_class,
+            patch(
+                "modules.activities.activity_file_import.tcx_utils.activity_file_import_parser_utils.resolve_timezone_from_lat_lon",
+                return_value="UTC",
+            ),
+        ):
+            mock_reader_class.return_value.read.return_value = mock_tcx
+
+            result = tcx_utils.parse_tcx_file(file="dummy.tcx", user_id=1, default_timezone=_SERVER_TZ)
+
+        assert result["activity"].distance == 0
+
     def test_parse_laps_timer_time_excludes_pause(self):
         """Lap timer time sums moving deltas only; elapsed stays wall-clock."""
         t0 = datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC)
@@ -513,6 +559,12 @@ class TestUtilsTcx:
             "lat_lon_waypoints": [
                 {"time": "2026-06-20T08:20:03", "lat": 40.0, "lon": -3.0},
                 {"time": "2026-06-20T08:25:03", "lat": 40.01, "lon": -3.0},
+            ],
+            "lat_lon_segments": [
+                [
+                    {"time": "2026-06-20T08:20:03", "lat": 40.0, "lon": -3.0},
+                    {"time": "2026-06-20T08:25:03", "lat": 40.01, "lon": -3.0},
+                ]
             ],
             "hr_waypoints": [],
             "cad_waypoints": [],
