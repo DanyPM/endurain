@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import modules.activities.activity_file_import.fit_frames as fit_frames
 import modules.activities.activity_file_import.fit_utils as fit_utils
+import modules.activities.computation as activities_computation
 
 _SERVER_TZ = "UTC"
 
@@ -790,6 +791,29 @@ class TestGetValueFromFrame:
     def test_keyerror_falls_back_to_default(self):
         """An unknown field (KeyError) falls back to the default."""
         assert fit_frames.get_value_from_frame(_RaisingFrame(), "missing", "d") == "d"
+
+
+class TestParseFrameRecordCadence:
+    """parse_frame_record folds fractional_cadence into the record cadence."""
+
+    @staticmethod
+    def _cadence(**values):
+        return fit_frames.parse_frame_record(_MockFrame(**values))[5]
+
+    def test_folds_the_fraction(self):
+        assert self._cadence(cadence=85, fractional_cadence=0.5) == 85.5
+
+    def test_keeps_cadence_without_a_fraction(self):
+        assert self._cadence(cadence=85) == 85
+
+    def test_missing_cadence_stays_none(self):
+        assert self._cadence(fractional_cadence=0.5) is None
+
+    def test_running_stream_doubles_the_folded_fraction(self):
+        waypoints = activities_computation.double_cadence_waypoints(
+            [{"time": "t0", "cad": self._cadence(cadence=85, fractional_cadence=0.5)}]
+        )
+        assert waypoints == [{"time": "t0", "cad": 171}]
 
 
 class TestParseFrameLap:
