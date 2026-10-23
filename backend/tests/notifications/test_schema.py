@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta, timezone
 import modules.notifications.schema as notifications_schema
 
 
-class TestNotificationReadCreatedAtSerialization:
-    """created_at serializes as a full UTC ISO 8601 timestamp."""
+class TestNotificationReadCreatedAt:
+    """created_at is normalized to UTC and serializes as a full ISO 8601 timestamp."""
 
     def _notification(self, created_at):
         return notifications_schema.NotificationRead(
@@ -18,28 +18,36 @@ class TestNotificationReadCreatedAtSerialization:
             created_at=created_at,
         )
 
-    def test_created_at_serializes_full_iso_with_utc_offset(self):
+    def test_json_dump_is_full_iso_with_utc_offset(self):
+        value = datetime(2026, 7, 16, 10, 30, 0, tzinfo=UTC)
+
+        dumped = self._notification(value).model_dump(mode="json")
+
+        assert dumped["created_at"] == "2026-07-16T10:30:00Z"
+
+    def test_python_dump_keeps_datetime(self):
         value = datetime(2026, 7, 16, 10, 30, 0, tzinfo=UTC)
 
         dumped = self._notification(value).model_dump()
 
-        assert dumped["created_at"] == "2026-07-16T10:30:00+00:00"
+        assert dumped["created_at"] == value
+        assert isinstance(dumped["created_at"], datetime)
 
-    def test_created_at_naive_datetime_assumed_utc(self):
+    def test_naive_datetime_assumed_utc(self):
         value = datetime(2026, 7, 16, 10, 30, 0)
 
-        dumped = self._notification(value).model_dump()
+        notification = self._notification(value)
 
-        assert dumped["created_at"] == "2026-07-16T10:30:00+00:00"
+        assert notification.created_at == datetime(2026, 7, 16, 10, 30, 0, tzinfo=UTC)
 
-    def test_created_at_non_utc_offset_normalized_to_utc(self):
+    def test_non_utc_offset_normalized_to_utc(self):
         value = datetime(2026, 7, 16, 8, 19, 0, tzinfo=timezone(timedelta(hours=-7)))
 
-        dumped = self._notification(value).model_dump()
+        dumped = self._notification(value).model_dump(mode="json")
 
-        assert dumped["created_at"] == "2026-07-16T15:19:00+00:00"
+        assert dumped["created_at"] == "2026-07-16T15:19:00Z"
 
-    def test_created_at_none_serializes_none(self):
-        dumped = self._notification(None).model_dump()
+    def test_none_stays_none(self):
+        dumped = self._notification(None).model_dump(mode="json")
 
         assert dumped["created_at"] is None
