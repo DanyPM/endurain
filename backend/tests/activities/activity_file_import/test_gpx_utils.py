@@ -209,6 +209,36 @@ class TestParseGpxFile:
         # No lap spans the pause gap.
         assert all(lap["total_distance"] < 1000 for lap in result["laps"])
 
+    def test_parse_gpx_file_sparse_track_is_not_split_into_pauses(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """
+        Test a track sampled every 30 s keeps its distance, timer and pace.
+        """
+        _patch_parser_side_effects(monkeypatch)
+        points = "".join(
+            f'<trkpt lat="0.0" lon="{0.001 * i:.3f}">'
+            f"<time>2025-01-01T00:{(30 * i) // 60:02d}:{(30 * i) % 60:02d}Z</time></trkpt>"
+            for i in range(5)
+        )
+        gpx_path = _write_gpx(
+            tmp_path,
+            f'<gpx version="1.1" creator="pytest"><trk><name>Sparse run</name><type>Run</type>'
+            f"<trkseg>{points}</trkseg></trk></gpx>",
+        )
+
+        result = gpx_utils.parse_gpx_file(gpx_path, user_id=1, default_timezone=_SERVER_TZ)
+
+        expected_distance = 4 * geodesic((0.0, 0.0), (0.0, 0.001)).meters
+
+        activity = result["activity"]
+        assert activity.distance == round(expected_distance)
+        assert activity.total_timer_time == 120
+        assert activity.pace == pytest.approx(120 / expected_distance, rel=0.01)
+        assert result["laps"]
+
     def test_parse_gpx_file_timer_excludes_inter_segment_gap(
         self,
         tmp_path,

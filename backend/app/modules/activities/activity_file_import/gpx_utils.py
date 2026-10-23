@@ -52,6 +52,7 @@ class ParseState:
     ele_loss: float | None = None
     pace: float = 0
     moving_time: float = 0.0
+    pause_threshold: float = activity_file_import_parser_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
     first_waypoint_time: datetime | None = None
     last_waypoint_time: datetime | None = None
     gear_id: int | None = None
@@ -333,7 +334,7 @@ def _process_trackpoint(
 
     if state.prev_waypoint_time is not None:
         delta = (time - state.prev_waypoint_time).total_seconds()
-        if delta > activity_file_import_parser_utils.PAUSE_DETECTION_THRESHOLD_SECONDS:
+        if delta > state.pause_threshold:
             # Recording pause (issue #571): split the segment so the gap
             # contributes neither distance nor speed, and keep the gap out
             # of the moving time.
@@ -596,6 +597,16 @@ def parse_gpx_file(
 
             if not gpx.tracks:
                 raise core_exceptions.InvalidInputError("Invalid GPX file - no tracks found in the GPX file")
+
+            state.pause_threshold = activity_file_import_parser_utils.pause_threshold_seconds(
+                [
+                    point.time
+                    for track in gpx.tracks
+                    for segment in track.segments
+                    for point in segment.points
+                    if point.time is not None
+                ]
+            )
 
             for track in gpx.tracks:
                 _process_track_metadata(track, gpx, state)

@@ -135,6 +135,47 @@ class TestComputeMovingTimeFromTimes:
         times = [t + timedelta(seconds=s) for s in (0, 10, 5, 15)]
         assert afi_utils.compute_moving_time_from_times(times) == 15.0
 
+    def test_sparse_track_sampling_is_not_a_pause(self):
+        """A track sampled every 30 s counts every gap as moving time."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        times = [t + timedelta(seconds=30 * i) for i in range(5)]
+        assert afi_utils.compute_moving_time_from_times(times) == 120.0
+
+
+class TestPauseThresholdSeconds:
+    """Test suite for pause_threshold_seconds."""
+
+    def test_dense_track_uses_the_minimum(self):
+        """1 s sampling keeps the minimum threshold."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        times = [t + timedelta(seconds=i) for i in range(10)]
+        assert afi_utils.pause_threshold_seconds(times) == afi_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
+
+    def test_sparse_track_scales_with_the_median_interval(self):
+        """30 s sampling raises the threshold to three intervals."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        times = [t + timedelta(seconds=30 * i) for i in range(10)]
+        assert afi_utils.pause_threshold_seconds(times) == 90.0
+
+    def test_long_pauses_do_not_move_the_median(self):
+        """Two 600 s pauses in a 1 s track keep the minimum threshold."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        offsets = [*range(10), 610, 611, 612, 1212, 1213, 1214]
+        times = [t + timedelta(seconds=s) for s in offsets]
+        assert afi_utils.pause_threshold_seconds(times) == afi_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
+
+    def test_no_positive_gap_uses_the_minimum(self):
+        """Empty, single or duplicate timestamps fall back to the minimum."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        assert afi_utils.pause_threshold_seconds([]) == afi_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
+        assert afi_utils.pause_threshold_seconds([t, t]) == afi_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
+
+    def test_too_few_gaps_use_the_minimum(self):
+        """A single 300 s gap is a pause, not a sampling interval."""
+        t = datetime(2026, 1, 1, 8, 0, 0, tzinfo=UTC)
+        times = [t, t + timedelta(seconds=300)]
+        assert afi_utils.pause_threshold_seconds(times) == afi_utils.PAUSE_DETECTION_THRESHOLD_SECONDS
+
 
 class TestTimezoneFinderCache:
     """The TimezoneFinder is built once and reused (perf on the ingestion path)."""

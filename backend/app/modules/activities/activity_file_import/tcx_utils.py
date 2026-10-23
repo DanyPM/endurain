@@ -185,6 +185,9 @@ def _extract_waypoints(
     vel_waypoints: list[dict] = []
     pace_waypoints: list[dict] = []
     moving_time = 0.0
+    pause_threshold = activity_file_import_parser_utils.pause_threshold_seconds(
+        [tp["time"] for tp in trackpoints if tp["time"] is not None]
+    )
     segment_start_idx = 0
     last_time = None
     prev_lat = None
@@ -207,7 +210,7 @@ def _extract_waypoints(
 
         if last_time is not None:
             delta = (time_val - last_time).total_seconds()
-            if delta > activity_file_import_parser_utils.PAUSE_DETECTION_THRESHOLD_SECONDS:
+            if delta > pause_threshold:
                 # Recording pause (issue #571): split the GPS track so the
                 # gap contributes neither distance nor speed, and keep the
                 # gap out of the moving time.

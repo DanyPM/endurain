@@ -288,6 +288,51 @@ class TestUtilsTcx:
         # First point after the pause has no previous cursor -> speed 0.
         assert waypoints["vel_waypoints"][2]["vel"] == 0
 
+    def test_extract_waypoints_keeps_a_sparse_track_in_one_segment(self):
+        """A track sampled every 30 s is one segment, all of it moving time."""
+        t0 = datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC)
+        trackpoints = [
+            {"time": t0 + timedelta(seconds=30 * i), "latitude": 40.0 + 0.001 * i, "longitude": -3.0} for i in range(5)
+        ]
+
+        waypoints = tcx_utils._extract_waypoints(trackpoints, SimpleNamespace(trackpoints=[]))
+
+        assert waypoints["moving_time"] == 120.0
+        assert len(waypoints["lat_lon_segments"]) == 1
+        assert len(waypoints["lat_lon_segments"][0]) == 5
+        assert all(wp["vel"] > 0 for wp in waypoints["vel_waypoints"][1:])
+
+    def test_parse_tcx_file_sparse_track_without_summary_distance(self, tmp_path):
+        """A 30 s sampled TCX without DistanceMeters gets a non-zero distance and pace."""
+        trackpoints = "".join(
+            f"<Trackpoint><Time>2026-06-20T08:{(30 * i) // 60:02d}:{(30 * i) % 60:02d}Z</Time>"
+            f"<Position><LatitudeDegrees>{40.0 + 0.001 * i:.3f}</LatitudeDegrees>"
+            "<LongitudeDegrees>-3.0</LongitudeDegrees></Position></Trackpoint>"
+            for i in range(5)
+        )
+        tcx_path = tmp_path / "sparse.tcx"
+        tcx_path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">'
+            '<Activities><Activity Sport="Running"><Id>2026-06-20T08:00:00Z</Id>'
+            '<Lap StartTime="2026-06-20T08:00:00Z"><TotalTimeSeconds>120</TotalTimeSeconds>'
+            f"<Track>{trackpoints}</Track></Lap>"
+            "</Activity></Activities></TrainingCenterDatabase>",
+            encoding="utf-8",
+        )
+
+        with patch(
+            "modules.activities.activity_file_import.tcx_utils.activity_file_import_parser_utils.resolve_timezone_from_lat_lon",
+            return_value="UTC",
+        ):
+            result = tcx_utils.parse_tcx_file(file=str(tcx_path), user_id=1, default_timezone=_SERVER_TZ)
+
+        activity = result["activity"]
+        # 4 hops of 0.001 deg latitude, about 111 m each.
+        assert 400 < activity.distance < 500
+        assert activity.total_timer_time == 120
+        assert activity.pace > 0
+
     def test_parse_tcx_file_uses_moving_time_for_timer_and_pace(self):
         """total_timer_time and pace come from moving time; elapsed stays wall-clock."""
         dt_start = datetime(2026, 6, 20, 8, 0, 0, tzinfo=UTC)
