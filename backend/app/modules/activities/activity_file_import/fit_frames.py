@@ -407,6 +407,11 @@ def parse_frame_device_settings(frame):
     return get_value_from_frame(frame, "time_offset")
 
 
+# Real UTC offsets span UTC-12:00 to UTC+14:00.
+_MIN_UTC_OFFSET_SECONDS = -12 * 3600
+_MAX_UTC_OFFSET_SECONDS = 14 * 3600
+
+
 def parse_frame_activity(frame):
     """Extract the device UTC offset from a FIT activity frame.
 
@@ -420,13 +425,17 @@ def parse_frame_activity(frame):
         frame: The decoded FIT data message.
 
     Returns:
-        The UTC offset in seconds, or None when either timestamp is absent.
+        The UTC offset in seconds, or None when either timestamp is absent
+        or the offset falls outside the real UTC offset range.
     """
     utc_raw = get_raw_value_from_frame(frame, "timestamp")
     local_raw = get_raw_value_from_frame(frame, "local_timestamp")
     if utc_raw is None or local_raw is None:
         return None
-    return local_raw - utc_raw
+    offset = local_raw - utc_raw
+    if not _MIN_UTC_OFFSET_SECONDS <= offset <= _MAX_UTC_OFFSET_SECONDS:
+        return None
+    return offset
 
 
 def parse_frame_length(frame):

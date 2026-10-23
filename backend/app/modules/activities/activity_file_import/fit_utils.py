@@ -145,10 +145,15 @@ def create_activity_objects(
                         session_record["lat_lon_waypoints"][0]["lon"],
                         timezone,
                     )
-                elif session_record.get("activity_time_offset") is not None:
+                elif session_record.get("activity_time_offset") is not None and (
+                    session_record["activity_time_offset"] != 0 or not session_record["time_offset"]
+                ):
                     # activity.local_timestamp - activity.timestamp is the
                     # canonical FIT offset and is present in GPS-less files,
-                    # so it outranks device_settings.time_offset.
+                    # so it outranks device_settings.time_offset. Some writers
+                    # set local_timestamp == timestamp when the zone is
+                    # unknown, so a 0 offset yields to a non-zero
+                    # device_settings.time_offset.
                     session_timezone = activity_file_import_fit_frames._timezone_from_offset(
                         session_record["activity_time_offset"],
                         session_record["session"]["first_waypoint_time"],

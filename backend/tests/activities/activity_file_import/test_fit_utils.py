@@ -733,14 +733,23 @@ class TestActivityLocalTimestampOffset:
 
         assert activities[0]["activity"].timezone == "Etc/GMT-2"
 
-    def test_zero_activity_offset_resolves_to_utc(self):
+    def test_zero_activity_offset_resolves_to_utc_without_device_settings(self):
+        record = _session_record("garmin")
+        record["activity_time_offset"] = 0
+        record["time_offset"] = 0
+
+        activities = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)
+
+        assert activities[0]["activity"].timezone == "UTC"
+
+    def test_zero_activity_offset_yields_to_nonzero_device_settings(self):
         record = _session_record("garmin")
         record["activity_time_offset"] = 0
         record["time_offset"] = 3600
 
         activities = fit_utils.create_activity_objects([record], user_id=1, default_timezone=_SERVER_TZ)
 
-        assert activities[0]["activity"].timezone == "UTC"
+        assert activities[0]["activity"].timezone == "Etc/GMT-1"
 
     def test_falls_back_to_device_settings_without_activity_offset(self):
         record = _session_record("garmin")
@@ -816,3 +825,15 @@ class TestParseFrameActivity:
 
     def test_none_when_timestamp_missing(self):
         assert fit_frames.parse_frame_activity(_RawFrame(local_timestamp=1_000_000)) is None
+
+    def test_none_when_offset_beyond_utc_plus_14(self):
+        frame = _RawFrame(timestamp=1_000_000, local_timestamp=1_000_000 + 15 * 3600)
+        assert fit_frames.parse_frame_activity(frame) is None
+
+    def test_none_when_offset_beyond_utc_minus_12(self):
+        frame = _RawFrame(timestamp=1_000_000, local_timestamp=1_000_000 - 13 * 3600)
+        assert fit_frames.parse_frame_activity(frame) is None
+
+    def test_accepts_utc_plus_14_boundary(self):
+        frame = _RawFrame(timestamp=1_000_000, local_timestamp=1_000_000 + 14 * 3600)
+        assert fit_frames.parse_frame_activity(frame) == 14 * 3600
