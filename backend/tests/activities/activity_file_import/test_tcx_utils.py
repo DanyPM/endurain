@@ -489,7 +489,7 @@ class TestUtilsTcx:
         )
         tcx_file = SimpleNamespace(laps=[lap])
 
-        laps = tcx_utils._parse_laps(tcx_file)
+        laps = tcx_utils._parse_laps(tcx_file, [])
 
         assert laps[0]["total_elapsed_time"] == 320
         assert laps[0]["total_timer_time"] == 20
@@ -752,6 +752,7 @@ class TestParseTcxFileElevation:
     def _fake_waypoints(ele_waypoints):
         return {
             "lat_lon_waypoints": [],
+            "lat_lon_segments": [],
             "hr_waypoints": [],
             "cad_waypoints": [],
             "ele_waypoints": ele_waypoints,
